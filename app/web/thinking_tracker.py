@@ -41,6 +41,7 @@ class ThinkingTracker:
     _session_progress: Dict[str, Dict[str, Any]] = {}  # 存储进度信息
     _session_logs: Dict[str, List[Dict]] = {}  # 存储日志内容
     _ws_send_callbacks: Dict[str, Any] = {}  # 存储WebSocket发送回调函数
+    _terminal_outputs: Dict[str, List[Dict]] = {}  # 存储终端输出
     _lock = threading.Lock()
 
     @classmethod
@@ -218,6 +219,76 @@ class ThinkingTracker:
             return cls._session_status[session_id].value
 
     @classmethod
+    def add_terminal_output(cls, session_id: str, output: str, 
+                           thinking_step_id: Optional[str] = None, 
+                           tool_name: Optional[str] = None) -> None:
+        """添加终端输出记录
+
+        Args:
+            session_id: 会话ID
+            output: 终端输出内容
+            thinking_step_id: 关联的思考步骤ID（可选）
+            tool_name: 工具名称（可选）
+        """
+        with cls._lock:
+            if session_id not in cls._terminal_outputs:
+                cls._terminal_outputs[session_id] = []
+            
+            # 创建输出条目，带有时间戳和元数据
+            terminal_entry = {
+                "output": output,
+                "timestamp": time.time(),
+                "thinking_step_id": thinking_step_id,
+                "tool_name": tool_name
+            }
+            
+            cls._terminal_outputs[session_id].append(terminal_entry)
+            
+            # 如果存在WebSocket回调，则通知客户端有新的终端输出
+            cls._notify_ws_terminal_update(session_id, terminal_entry)
+
+    @classmethod
+    def _notify_ws_terminal_update(cls, session_id: str, terminal_entry: Dict) -> None:
+        """通知WebSocket客户端有新的终端输出"""
+        with cls._lock:
+            if session_id in cls._ws_send_callbacks:
+                callback = cls._ws_send_callbacks[session_id]
+                try:
+                    # 使用asyncio.create_task确保非阻塞
+                    asyncio.create_task(
+                        callback(
+                            json.dumps({
+                                "status": cls.get_status(session_id),
+                                "terminal_output": [terminal_entry]
+                            })
+                        )
+                    )
+                except Exception as e:
+                    print(f"WebSocket发送回调失败: {str(e)}")
+
+    @classmethod
+    def get_terminal_output(cls, session_id: str, start_index: int = 0) -> List[Dict]:
+        """获取指定会话的终端输出"""
+        with cls._lock:
+            if session_id not in cls._terminal_outputs:
+                return []
+            
+            return cls._terminal_outputs[session_id][start_index:]
+
+    @classmethod
+    def get_terminal_output_for_step(cls, session_id: str, 
+                                    thinking_step_id: str) -> List[Dict]:
+        """获取与特定思考步骤关联的终端输出"""
+        with cls._lock:
+            if session_id not in cls._terminal_outputs:
+                return []
+            
+            return [
+                entry for entry in cls._terminal_outputs[session_id]
+                if entry.get("thinking_step_id") == thinking_step_id
+            ]
+
+    @classmethod
     def clear_session(cls, session_id: str) -> None:
         """清除指定会话的记录"""
         with cls._lock:
@@ -229,6 +300,9 @@ class ThinkingTracker:
                 del cls._session_progress[session_id]
             if session_id in cls._session_logs:
                 del cls._session_logs[session_id]
+            # 添加终端输出清理
+            if session_id in cls._terminal_outputs:
+                del cls._terminal_outputs[session_id]
 
     @classmethod
     def add_log_entry(cls, session_id: str, entry: Dict) -> None:
