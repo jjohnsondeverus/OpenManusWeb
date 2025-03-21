@@ -10,6 +10,54 @@ export class WebSocketManager {
         this.sessionId = null;
     }
 
+    // Initialize WebSocket manager
+    init() {
+        console.log('Initializing WebSocketManager...');
+        
+        // Generate a session ID if not already set
+        if (!this.sessionId) {
+            this.sessionId = this.generateSessionId();
+        }
+        
+        // Connect to WebSocket with the session ID
+        this.connect(this.sessionId);
+        
+        // Set up message handler callback
+        this.messageHandlers = [];
+        this.statusChangeHandlers = [];
+    }
+    
+    // Generate a random session ID
+    generateSessionId() {
+        return crypto.randomUUID ? crypto.randomUUID() : 
+               Math.random().toString(36).substring(2, 15) + 
+               Math.random().toString(36).substring(2, 15);
+    }
+    
+    // Register message handler
+    onMessage(callback) {
+        if (typeof callback === 'function') {
+            this.messageHandlers.push(callback);
+        }
+    }
+    
+    // Register status change handler
+    onStatusChange(callback) {
+        if (typeof callback === 'function') {
+            this.statusChangeHandlers.push(callback);
+        }
+    }
+
+    // Send message through WebSocket
+    sendMessage(message) {
+        if (!message.type) {
+            message.type = 'command';
+        }
+        
+        console.log('Sending message:', message);
+        this.send(message);
+    }
+
     // Connect to WebSocket
     connect(sessionId) {
         // Save session ID
@@ -44,9 +92,22 @@ export class WebSocketManager {
         const statusIndicator = document.getElementById('status-indicator');
         if (statusIndicator) {
             statusIndicator.textContent = 'Connected to server...';
+            statusIndicator.className = 'connected';
         }
+        
         // Reset reconnect attempts
         this.reconnectAttempts = 0;
+        
+        // Notify status change handlers
+        if (this.statusChangeHandlers && this.statusChangeHandlers.length > 0) {
+            this.statusChangeHandlers.forEach(handler => {
+                try {
+                    handler(true); // true = connected
+                } catch (error) {
+                    console.error('Error in status change handler:', error);
+                }
+            });
+        }
     }
 
     // Handle received messages
@@ -55,9 +116,15 @@ export class WebSocketManager {
             const data = JSON.parse(event.data);
             console.log('Received WebSocket message:', data);
 
-            // Call message handler callback
-            if (this.messageHandler) {
-                this.messageHandler(data);
+            // Call all registered message handlers
+            if (this.messageHandlers && this.messageHandlers.length > 0) {
+                this.messageHandlers.forEach(handler => {
+                    try {
+                        handler(data);
+                    } catch (error) {
+                        console.error('Error in message handler:', error);
+                    }
+                });
             }
         } catch (error) {
             console.error('Error parsing WebSocket message:', error);
@@ -67,6 +134,17 @@ export class WebSocketManager {
     // Handle connection close
     handleClose(event) {
         console.log(`WebSocket connection closed: ${event.code} ${event.reason}`);
+        
+        // Notify status change handlers
+        if (this.statusChangeHandlers && this.statusChangeHandlers.length > 0) {
+            this.statusChangeHandlers.forEach(handler => {
+                try {
+                    handler(false); // false = disconnected
+                } catch (error) {
+                    console.error('Error in status change handler:', error);
+                }
+            });
+        }
 
         // Try reconnecting
         this.attemptReconnect();

@@ -7,7 +7,7 @@ import { ThinkingManager } from './connected_thinkingManager.js';
 import { WorkspaceManager } from './connected_workspaceManager.js';
 import { FileViewerManager } from './connected_fileViewerManager.js';
 import { TerminalManager } from './connected_terminalManager.js';
-import { loadText, updateLanguageElements } from './i18n.js';
+import { t, updatePageTexts as updateLanguageElements, setLanguage } from './i18n.js';
 
 // Main App class
 class App {
@@ -212,18 +212,14 @@ class App {
     changeLanguage(language) {
         console.log(`Changing language to ${language}`);
         
-        // Update language in i18n.js
-        if (typeof window.setLanguage === 'function') {
-            window.setLanguage(language);
-            
-            // Update all text elements
-            updateLanguageElements();
-            
-            // Add to terminal
-            this.terminalManager.addLine(`Language changed to ${language}`, "system");
-        } else {
-            console.error("setLanguage function not available");
-        }
+        // Update language
+        setLanguage(language);
+        
+        // Update all text elements
+        updateLanguageElements();
+        
+        // Add to terminal
+        this.terminalManager.addLine(`Language changed to ${language}`, "system");
     }
 }
 

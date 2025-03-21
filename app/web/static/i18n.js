@@ -161,6 +161,16 @@ export function t(key, params = {}) {
 }
 
 /**
+ * Load text for a specific key (alias for t function)
+ * @param {string} key - The translation key
+ * @param {Object} params - Replacement parameters
+ * @returns {string} Translated text
+ */
+export function loadText(key, params = {}) {
+    return t(key, params);
+}
+
+/**
  * 获取可用语言列表
  * @returns {Array} 可用语言列表
  */
