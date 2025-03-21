@@ -180,3 +180,6 @@ data/
 workspace/
 
 config/config.toml
+
+# SpecStory files
+.specstory/
