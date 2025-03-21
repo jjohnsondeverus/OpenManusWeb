@@ -67,7 +67,7 @@ class App {
 
         // 清除思考记录按钮
         document.getElementById('clear-thinking').addEventListener('click', () => {
-            this.thinkingManager.clearThinking();
+            this.thinkingManager.clear();
         });
 
         // 刷新文件按钮
@@ -88,24 +88,28 @@ class App {
     updateDynamicTexts() {
         // 更新状态指示器
         const statusIndicator = document.getElementById('status-indicator');
-        if (statusIndicator.textContent.includes('正在处理')) {
+        if (statusIndicator && statusIndicator.textContent.includes('正在处理')) {
             statusIndicator.textContent = t('processing_request');
-        } else if (statusIndicator.textContent.includes('处理已停止')) {
+        } else if (statusIndicator && statusIndicator.textContent.includes('处理已停止')) {
             statusIndicator.textContent = t('processing_stopped');
         }
 
         // 更新记录计数
         const recordCount = document.getElementById('record-count');
-        const count = parseInt(recordCount.textContent);
-        if (!isNaN(count)) {
-            recordCount.textContent = t('records_count', { count });
+        if (recordCount) {
+            const count = parseInt(recordCount.textContent);
+            if (!isNaN(count)) {
+                recordCount.textContent = t('records_count', { count });
+            }
         }
 
         // 更新刷新倒计时
         const refreshCountdown = document.getElementById('refresh-countdown');
-        const seconds = refreshCountdown.textContent.match(/\d+/);
-        if (seconds) {
-            refreshCountdown.textContent = t('refresh_countdown', { seconds: seconds[0] });
+        if (refreshCountdown) {
+            const seconds = refreshCountdown.textContent.match(/\d+/);
+            if (seconds) {
+                refreshCountdown.textContent = t('refresh_countdown', { seconds: seconds[0] });
+            }
         }
     }
 
@@ -117,9 +121,33 @@ class App {
         }
 
         this.isProcessing = true;
-        document.getElementById('send-btn').disabled = true;
-        document.getElementById('stop-btn').disabled = false;
-        document.getElementById('status-indicator').textContent = t('processing_request');
+        
+        // 获取按钮并检查它们是否存在
+        const sendBtn = document.getElementById('send-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        
+        if (sendBtn) sendBtn.disabled = true;
+        if (stopBtn) stopBtn.disabled = false;
+        
+        // 检查状态指示器是否存在，不存在则创建
+        let statusIndicator = document.getElementById('status-indicator');
+        if (!statusIndicator) {
+            statusIndicator = document.createElement('div');
+            statusIndicator.id = 'status-indicator';
+            statusIndicator.className = 'status-indicator';
+            
+            // 将状态指示器添加到输入容器下方
+            const inputContainer = document.querySelector('.input-container');
+            if (inputContainer) {
+                inputContainer.parentNode.insertBefore(statusIndicator, inputContainer.nextSibling);
+            } else {
+                console.warn('未找到合适的位置放置状态指示器');
+            }
+        }
+        
+        if (statusIndicator) {
+            statusIndicator.textContent = t('processing_request');
+        }
 
         try {
             // 发送API请求创建新会话
@@ -145,7 +173,10 @@ class App {
             this.websocketManager.connect(this.sessionId);
 
             // 重置思考记录
-            this.thinkingManager.clearThinking();
+            this.thinkingManager.clear();
+            
+            // 清空终端输出
+            this.clearTerminalOutput();
 
         } catch (error) {
             console.error(t('send_message_error', { message: error.message }), error);
@@ -171,6 +202,11 @@ class App {
             
             // 显示状态
             this.chatManager.updateStatus(data.status);
+            
+            // 更新进度条
+            if (data.progress) {
+                this.updateProgressBar(data.progress.percentage || 0);
+            }
         }
 
         // 处理思考步骤
@@ -263,52 +299,137 @@ class App {
     // 初始化终端（占位符实现）
     initTerminal() {
         const terminalContainer = document.getElementById('terminal-container');
-        if (terminalContainer) {
-            terminalContainer.innerHTML = '<div class="terminal-placeholder">终端将在Phase2中实现</div>';
-            
-            // 添加简单样式
-            const style = document.createElement('style');
-            style.textContent = `
-                .terminal-placeholder {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100%;
-                    color: #cccccc;
-                    font-family: monospace;
-                    font-size: 14px;
-                }
-            `;
-            document.head.appendChild(style);
+        if (!terminalContainer) {
+            console.warn('终端容器元素不存在，跳过终端初始化');
+            return;
+        }
+        
+        terminalContainer.innerHTML = '<div class="terminal-placeholder">' + 
+            '<div class="terminal-content">' +
+            '<div class="terminal-header">OpenManus Terminal</div>' +
+            '<div class="terminal-output" id="terminal-output"></div>' +
+            '</div></div>';
+        
+        // 添加简单样式
+        const style = document.createElement('style');
+        style.textContent = `
+            .terminal-placeholder {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                width: 100%;
+                background-color: #1e293b;
+                color: #e2e8f0;
+                font-family: 'JetBrains Mono', monospace;
+                overflow: auto;
+            }
+            .terminal-content {
+                flex: 1;
+                padding: 0.5rem;
+                display: flex;
+                flex-direction: column;
+            }
+            .terminal-header {
+                color: #94a3b8;
+                padding-bottom: 0.5rem;
+                border-bottom: 1px solid #334155;
+                margin-bottom: 0.5rem;
+                font-size: 0.9rem;
+            }
+            .terminal-output {
+                flex: 1;
+                overflow-y: auto;
+                white-space: pre-wrap;
+                font-size: 0.8rem;
+                line-height: 1.5;
+            }
+            .terminal-line {
+                margin-bottom: 0.25rem;
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // 设置终端输出元素引用
+        this.terminalOutput = document.getElementById('terminal-output');
+        
+        // 添加一些初始信息
+        this.handleTerminalOutput("Terminal initialized. Ready for commands.");
+    }
+    
+    // 清空终端输出
+    clearTerminalOutput() {
+        this.terminalOutputBuffer = [];
+        const terminalOutput = document.querySelector('.terminal-output');
+        if (terminalOutput) {
+            terminalOutput.innerHTML = '';
         }
     }
     
     // 处理终端输出
     handleTerminalOutput(output) {
-        if (!output || !output.length) return;
-        
-        // 将输出添加到缓冲区
-        this.terminalOutputBuffer.push(...output);
-        
-        // 在占位符中显示最新的几条输出（在Phase2中会使用xterm.js替换）
-        const terminalContainer = document.getElementById('terminal-container');
-        if (terminalContainer) {
-            let outputText = '';
-            
-            // 获取最新的10条输出
-            const recentOutput = this.terminalOutputBuffer.slice(-10);
-            for (const entry of recentOutput) {
-                outputText += `<div class="terminal-line">${entry.output}</div>`;
-            }
-            
-            terminalContainer.innerHTML = `
-                <div class="terminal-placeholder">
-                    <div class="terminal-content">
-                        ${outputText}
-                    </div>
-                </div>
-            `;
+        // 如果是数组，对每个元素调用处理函数
+        if (Array.isArray(output)) {
+            output.forEach(item => this.handleTerminalOutput(item));
+            return;
         }
+        
+        // 确保terminalOutput元素存在
+        if (!this.terminalOutput) {
+            this.terminalOutput = document.getElementById('terminal-output');
+            if (!this.terminalOutput) {
+                console.warn('终端输出元素不存在，无法显示输出');
+                this.terminalOutputBuffer.push(output); // 将输出保存在缓冲区
+                return;
+            }
+        }
+        
+        // 创建新的终端行
+        const line = document.createElement('div');
+        line.className = 'terminal-line';
+        
+        // 处理不同类型的输出
+        if (typeof output === 'string') {
+            line.textContent = output;
+        } else if (output && typeof output === 'object') {
+            // 如果是对象，尝试提取有用的信息
+            if (output.message) {
+                line.textContent = output.message;
+            } else if (output.output) {
+                line.textContent = output.output;
+            } else {
+                try {
+                    line.textContent = JSON.stringify(output);
+                } catch (e) {
+                    line.textContent = '[Object]';
+                }
+            }
+        } else {
+            line.textContent = String(output);
+        }
+        
+        // 添加到终端
+        this.terminalOutput.appendChild(line);
+        
+        // 滚动到底部
+        this.terminalOutput.scrollTop = this.terminalOutput.scrollHeight;
+    }
+    
+    // 更新进度条
+    updateProgressBar(percentage) {
+        const progressBar = document.getElementById('progress-bar');
+        if (progressBar) {
+            progressBar.style.width = `${percentage}%`;
+        }
+    }
+    
+    // HTML转义
+    escapeHtml(unsafe) {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 }
 

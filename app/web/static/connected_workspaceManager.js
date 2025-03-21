@@ -2,7 +2,7 @@
 
 export class WorkspaceManager {
     constructor(fileClickCallback) {
-        this.workspaceContainer = document.getElementById('workspace-files');
+        this.workspaceContainer = document.getElementById('files-list');
         this.refreshCountdownElement = document.getElementById('refresh-countdown');
         this.fileClickCallback = fileClickCallback;
         this.workspaces = [];
@@ -12,6 +12,23 @@ export class WorkspaceManager {
 
     // 初始化工作区管理器
     init() {
+        // 检查refreshCountdownElement是否存在，不存在则创建
+        if (!this.refreshCountdownElement) {
+            // 查找section-header，如果存在则添加倒计时元素
+            const sectionHeader = document.querySelector('.workspace-section .section-header');
+            if (sectionHeader) {
+                this.refreshCountdownElement = document.createElement('span');
+                this.refreshCountdownElement.id = 'refresh-countdown';
+                this.refreshCountdownElement.className = 'refresh-countdown';
+                this.refreshCountdownElement.textContent = '5秒后刷新';
+                sectionHeader.appendChild(this.refreshCountdownElement);
+            } else {
+                // 如果找不到合适的位置，就跳过自动刷新
+                console.warn('未找到工作区标题栏，自动刷新功能将被禁用');
+                return;
+            }
+        }
+        
         // 设置自动刷新计时器
         this.startRefreshTimer();
     }
@@ -175,8 +192,14 @@ export class WorkspaceManager {
         return date.toLocaleString();
     }
 
-    // 开始自动刷新计时器
+    // 启动刷新计时器
     startRefreshTimer() {
+        // 确保元素存在
+        if (!this.refreshCountdownElement) {
+            console.warn('刷新倒计时元素不存在，跳过计时器设置');
+            return;
+        }
+
         // 清除现有计时器
         if (this.refreshTimer) {
             clearInterval(this.refreshTimer);
@@ -198,7 +221,6 @@ export class WorkspaceManager {
                 this.refreshWorkspaces();
                 // 重置倒计时
                 this.countdownValue = 5;
-                this.refreshCountdownElement.textContent = `${this.countdownValue}秒后刷新`;
             }
         }, 1000);
     }

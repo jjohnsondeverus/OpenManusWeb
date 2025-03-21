@@ -1,4 +1,4 @@
-// connected_thinkingManager.js - 处理AI思考过程显示
+// connected_thinkingManager.js - Handles AI thinking process display
 
 export class ThinkingManager {
     constructor() {
@@ -8,13 +8,13 @@ export class ThinkingManager {
         this.thinkingSteps = [];
     }
 
-    // 初始化思考管理器
+    // Initialize thinking manager
     init() {
         // 初始化记录计数
         this.updateRecordCount();
     }
 
-    // 添加思考步骤
+    // Add a single thinking step
     addThinkingStep(step) {
         this.thinkingSteps.push(step);
 
@@ -36,16 +36,16 @@ export class ThinkingManager {
         }, 10);
     }
 
-    // 添加多个思考步骤
+    // Add multiple thinking steps
     addThinkingSteps(steps) {
         if (!Array.isArray(steps)) return;
-
+        
         steps.forEach(step => {
             this.addThinkingStep(step);
         });
     }
 
-    // 创建步骤元素
+    // Create a step element
     createStepElement(step) {
         const itemDiv = document.createElement('div');
         itemDiv.className = 'timeline-item';
@@ -141,7 +141,7 @@ export class ThinkingManager {
         return itemDiv;
     }
 
-    // 获取步骤标题
+    // Get step header
     getStepHeader(step) {
         if (step.message) {
             return step.message;
@@ -172,22 +172,27 @@ export class ThinkingManager {
         }
     }
 
-    // 更新记录计数
+    // Update record count
     updateRecordCount() {
         if (this.recordCountElement) {
             this.recordCountElement.textContent = `${this.thinkingSteps.length} 条记录`;
         }
     }
 
-    // 清除所有思考记录
+    // Clear all thinking records
     clearThinking() {
         this.thinkingSteps = [];
         this.thinkingContainer.innerHTML = '';
         this.updateRecordCount();
     }
 
-    // 滚动到底部
+    // Scroll to bottom
     scrollToBottom() {
         this.thinkingContainer.scrollTop = this.thinkingContainer.scrollHeight;
+    }
+
+    // Add clear function to match the interface calls
+    clear() {
+        this.clearThinking();
     }
 }

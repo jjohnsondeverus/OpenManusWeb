@@ -210,6 +210,11 @@ body {
     background-color: var(--hover-color);
 }
 
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
 /* 思考过程区域 */
 .thinking-container {
     height: 40%;
@@ -313,12 +318,28 @@ body {
     display: flex;
     flex-direction: column;
     height: 100%;
+    width: 100%;
     overflow: auto;
 }
 
 .terminal-content {
     flex: 1;
     padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.terminal-header {
+    color: #94a3b8;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #334155;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.terminal-output {
+    flex: 1;
+    overflow: auto;
 }
 
 .terminal-line {
@@ -396,6 +417,30 @@ body {
     height: 100%;
     background-color: var(--progress-fill);
     transition: width 0.3s ease;
+}
+
+/* 状态消息 */
+.status-message {
+    align-self: center;
+    margin: 0.5rem 0;
+    padding: 0.25rem 0.75rem;
+    background-color: #f3f4f6;
+    border-radius: 1rem;
+    font-size: 0.875rem;
+    color: var(--secondary-color);
+    font-style: italic;
+}
+
+/* 语言选择器 */
+.language-selector {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    background-color: var(--panel-bg);
+    color: var(--text-color);
+    font-size: 0.875rem;
+    cursor: pointer;
+    outline: none;
 }
 
 /* 响应式设计 */

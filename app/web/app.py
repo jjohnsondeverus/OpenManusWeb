@@ -7,6 +7,7 @@ import uuid
 import webbrowser
 from pathlib import Path
 from typing import Dict
+import traceback
 
 from fastapi import (
     BackgroundTasks,
@@ -164,7 +165,7 @@ async def stop_processing(session_id: str):
         cancel_events[session_id].set()
 
     active_sessions[session_id]["status"] = "stopped"
-    active_sessions[session_id]["result"] = "处理已被用户停止"
+    active_sessions[session_id]["result"] = "Processing has been stopped by the user"
 
     return {"status": "stopped"}
 
@@ -172,120 +173,106 @@ async def stop_processing(session_id: str):
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
-    print(f"WebSocket连接已建立: {session_id}")
-
-    # 检查会话ID是否有效
-    try:
-        validate_session_id(session_id)
-    except ValueError as e:
-        await websocket.send_text(json.dumps({"error": str(e)}))
-        await websocket.close()
+    print(f"WebSocket connection established: {session_id}")
+    
+    # No longer using validate_session_id, just check if the session exists
+    if session_id not in ThinkingTracker._session_status:
+        await websocket.close(code=1008, reason="Invalid session ID")
         return
-
-    # 注册WebSocket发送函数，用于主动推送更新
+    
+    # Register send callback
     async def send_ws_message(message):
-        if isinstance(message, str):
-            await websocket.send_text(message)
-        else:
-            await websocket.send_text(json.dumps(message))
-
+        try:
+            # Try to send the message - this will fail if socket is closed
+            await websocket.send_json(message)
+        except RuntimeError as e:
+            # WebSocket might be disconnected
+            print(f"Error sending message: {str(e)}")
+        except Exception as e:
+            print(f"Unexpected error sending message: {str(e)}")
+    
     ThinkingTracker.register_ws_send_callback(session_id, send_ws_message)
-
+    
     try:
-        # 发送初始状态
-        status = ThinkingTracker.get_status(session_id)
-        logs = get_chat_logs(session_id) or []
-        thinking_steps = ThinkingTracker.get_thinking_steps(session_id)
-        progress = ThinkingTracker.get_progress(session_id)
-        terminal_output = ThinkingTracker.get_terminal_output(session_id)  # 获取终端输出
-
-        # 发送初始状态消息
-        await websocket.send_text(
-            json.dumps({
-                "status": status,
-                "log": logs,
-                "thinking_steps": thinking_steps,
-                "progress": progress.get("percentage", 0),
-                "terminal_output": terminal_output  # 添加终端输出到初始状态
-            })
-        )
-
-        # 记录上次更新的状态
-        last_status = status
-        last_logs_count = len(logs)
-        last_steps_count = len(thinking_steps)
-        last_progress = progress.get("percentage", 0)
-        last_terminal_output_count = len(terminal_output)  # 记录上次终端输出数量
-
-        # 等待更新
+        # Send initial status
+        await websocket.send_json({
+            "status": ThinkingTracker.get_status(session_id),
+            "log": ThinkingTracker.get_logs(session_id),
+            "thinking_steps": ThinkingTracker.get_thinking_steps(session_id),
+            "progress": ThinkingTracker.get_progress(session_id),
+            "terminal_output": ThinkingTracker.get_terminal_output(session_id)
+        })
+        
+        # Processing loop, waiting for updates
+        last_status = ThinkingTracker.get_status(session_id)
+        last_steps_count = len(ThinkingTracker.get_thinking_steps(session_id))
+        last_logs_count = len(ThinkingTracker.get_logs(session_id))
+        last_progress = ThinkingTracker.get_progress(session_id)
+        last_terminal_output_count = len(ThinkingTracker.get_terminal_output(session_id))
+        
         while True:
-            # 获取最新状态
-            current_status = ThinkingTracker.get_status(session_id)
-            current_thinking_steps = ThinkingTracker.get_thinking_steps(session_id)
-            current_logs = get_chat_logs(session_id) or []
-            current_progress = ThinkingTracker.get_progress(session_id)
-            current_terminal_output = ThinkingTracker.get_terminal_output(session_id)  # 获取最新终端输出
-
-            update_data = {}
-            send_update = False
-
-            # 检查状态是否变化
-            if current_status != last_status:
-                update_data["status"] = current_status
-                last_status = current_status
-                send_update = True
-
-            # 检查思考步骤是否有更新
-            if len(current_thinking_steps) > last_steps_count:
-                new_steps = current_thinking_steps[last_steps_count:]
-                update_data["thinking_steps"] = new_steps
-                last_steps_count = len(current_thinking_steps)
-                send_update = True
-
-            # 检查日志是否有更新
-            if len(current_logs) > last_logs_count:
-                new_logs = current_logs[last_logs_count:]
-                update_data["log"] = new_logs
-                last_logs_count = len(current_logs)
-                send_update = True
-
-            # 检查进度是否变化
-            current_progress_value = current_progress.get("percentage", 0)
-            if current_progress_value != last_progress:
-                update_data["progress"] = current_progress_value
-                last_progress = current_progress_value
-                send_update = True
-
-            # 检查终端输出是否有更新
-            if len(current_terminal_output) > last_terminal_output_count:
-                new_terminal_output = current_terminal_output[last_terminal_output_count:]
-                update_data["terminal_output"] = new_terminal_output
-                last_terminal_output_count = len(current_terminal_output)
-                send_update = True
-
-            # 如果有更新，发送给客户端
-            if send_update:
-                await websocket.send_text(json.dumps(update_data))
-
-            # 如果会话已完成，发送最终结果
-            if current_status in ["completed", "error", "stopped"] and not "result" in update_data:
-                result = get_final_result(session_id)
-                if result:
-                    await websocket.send_text(json.dumps({
-                        "result": result,
-                        "status": current_status,
-                        "terminal_output": current_terminal_output  # 确保最终结果包含所有终端输出
-                    }))
-
-            # 等待一段时间再检查更新
-            await asyncio.sleep(0.1)
-
+            try:
+                # Wait for a little to prevent high CPU usage
+                await asyncio.sleep(0.1)
+                
+                current_status = ThinkingTracker.get_status(session_id)
+                current_steps = ThinkingTracker.get_thinking_steps(session_id, last_steps_count)
+                current_logs = ThinkingTracker.get_logs(session_id, last_logs_count)
+                current_progress = ThinkingTracker.get_progress(session_id)
+                current_terminal_outputs = ThinkingTracker.get_terminal_output(session_id, last_terminal_output_count)
+                
+                # Send status updates
+                if current_status != last_status:
+                    await websocket.send_json({"status": current_status})
+                    last_status = current_status
+                
+                # Send thinking steps updates
+                if current_steps:
+                    await websocket.send_json({"thinking_steps": current_steps})
+                    last_steps_count += len(current_steps)
+                
+                # Send log updates
+                if current_logs:
+                    await websocket.send_json({"log": current_logs})
+                    last_logs_count += len(current_logs)
+                    
+                # Send terminal output updates
+                if current_terminal_outputs:
+                    await websocket.send_json({"terminal_output": current_terminal_outputs})
+                    last_terminal_output_count += len(current_terminal_outputs)
+                
+                # Send progress updates
+                if current_progress != last_progress:
+                    await websocket.send_json({"progress": current_progress})
+                    last_progress = current_progress
+                
+                # If processing is complete, send final result
+                if current_status in [TaskStatus.COMPLETED.value, TaskStatus.ERROR.value, TaskStatus.STOPPED.value]:
+                    # Get result
+                    response = await get_chat_result(session_id)
+                    result = response.get("result", "")
+                    
+                    if result:
+                        await websocket.send_json({
+                            "result": result,
+                            "terminal_output": ThinkingTracker.get_terminal_output(session_id)
+                        })
+                    break
+            except WebSocketDisconnect:
+                print(f"WebSocket disconnected: {session_id}")
+                break
+            except Exception as e:
+                print(f"WebSocket loop error: {str(e)}")
+                traceback.print_exc()
+                break
+    
     except WebSocketDisconnect:
-        print(f"WebSocket连接已断开: {session_id}")
+        print(f"WebSocket disconnected: {session_id}")
     except Exception as e:
-        print(f"WebSocket错误: {str(e)}")
+        print(f"WebSocket error: {str(e)}")
+        traceback.print_exc()
     finally:
-        # 注销WebSocket回调
+        # Unregister callback
         ThinkingTracker.unregister_ws_send_callback(session_id)
 
 

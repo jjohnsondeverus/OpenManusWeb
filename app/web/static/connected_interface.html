@@ -111,18 +111,20 @@
         }
 
         .left-panel {
-            flex: 3;
-            max-width: 60%;
+            width: 60%;
+            height: 100%;
             display: flex;
             flex-direction: column;
+            border-right: 1px solid var(--border-color);
+            overflow: hidden;
         }
 
         .right-panel {
-            flex: 2;
-            max-width: 40%;
+            width: 40%;
+            height: 100%;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            overflow: hidden;
         }
 
         /* 思考过程部分 */
@@ -535,37 +537,34 @@
 
         /* 终端部分 */
         .terminal-container {
-            width: 100%;
-            height: 400px;
-            background-color: #1A1A1A;
-            border: 1px solid #333333;
-            border-radius: 4px;
-            padding: 0;
-            overflow: hidden;
-            margin-bottom: 20px;
-            font-family: monospace;
-            color: #F0F0F0;
+            flex: 1;
+            background-color: var(--terminal-bg);
+            color: var(--terminal-text);
+            font-family: 'JetBrains Mono', monospace;
+            padding: 0.5rem;
+            overflow: auto;
+            font-size: 0.875rem;
+            line-height: 1.4;
         }
 
         .session-controls {
-            margin-top: 20px;
-            padding: 10px;
-            border: 1px solid var(--border-color);
-            border-radius: 4px;
+            padding: 0.75rem;
+            border-top: 1px solid var(--border-color);
+            background-color: var(--panel-bg);
         }
 
         .progress-container {
             width: 100%;
-            height: 8px;
-            background-color: #E0E0E0;
-            border-radius: 4px;
-            margin: 10px 0;
+            height: 0.5rem;
+            background-color: var(--progress-bg);
+            border-radius: 0.25rem;
+            margin: 0.5rem 0;
             overflow: hidden;
         }
 
         .progress-bar {
             height: 100%;
-            background-color: var(--primary-color);
+            background-color: var(--progress-fill);
             width: 0%;
             transition: width 0.3s ease;
         }
@@ -612,6 +611,7 @@
             <div class="thinking-container">
                 <div class="thinking-header">
                     <div class="thinking-title">AI思考过程</div>
+                    <button id="clear-thinking" class="btn btn-clear btn-sm">清空</button>
                 </div>
                 <div class="thinking-timeline" id="thinking-timeline">
                     <!-- 思考步骤将在这里动态添加 -->
@@ -636,7 +636,10 @@
 
             <!-- 工作区文件区域 -->
             <div class="workspace-section">
-                <div class="section-header">工作区文件</div>
+                <div class="section-header">
+                    <div>工作区文件</div>
+                    <button id="refresh-files" class="btn btn-clear btn-sm">刷新</button>
+                </div>
                 <div class="workspace-container">
                     <div class="files-list" id="files-list">
                         <!-- 文件列表将在这里动态添加 -->
@@ -650,21 +653,6 @@
     </div>
 
     <!-- 管理器脚本 -->
-    <script src="static/lang.js"></script>
-    <script src="static/websocket_manager.js"></script>
-    <script src="static/chat_manager.js"></script>
-    <script src="static/thinking_manager.js"></script>
-    <script src="static/workspace_manager.js"></script>
-    <script src="static/file_viewer_manager.js"></script>
-    
-    <!-- 主应用脚本 -->
-    <script src="static/connected_interface.js"></script>
-    <script>
-        // 页面加载完成后初始化应用
-        window.addEventListener('DOMContentLoaded', () => {
-            const app = new App();
-            app.init();
-        });
-    </script>
+    <script type="module" src="static/connected_interface.js"></script>
 </body>
 </html>

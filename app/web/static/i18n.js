@@ -1,187 +1,217 @@
-// i18n.js - 国际化模块，管理中英文翻译
+/**
+ * i18n模块 - 处理国际化和多语言支持
+ */
 
-// 支持的语言
-export const SUPPORTED_LANGUAGES = {
-    'zh-CN': '中文',
-    'en-US': 'English'
-};
+// 默认语言
+let currentLanguage = 'zh-CN';
 
-// 翻译文本
-export const translations = {
-    // 中文翻译
+// 语言文本映射
+const translations = {
     'zh-CN': {
-        // 页面标题和头部
-        'page_title': 'OpenManus Web - 网页版',
-        'app_title': 'OpenManus',
-        'app_subtitle': 'AI智能助手 - 网页版',
+        // 通用
+        'app_title': 'OpenManus Web',
+        'loading': '加载中...',
+        'error': '错误',
+        'success': '成功',
+        'cancel': '取消',
+        'save': '保存',
+        'delete': '删除',
+        'edit': '编辑',
+        'confirm': '确认',
         
-        // 主要区域标题
-        'processing_progress': '处理进度',
-        'ai_thinking_process': 'AI思考过程',
-        'workspace_files': '工作区文件',
-        'conversation': '对话',
-        
-        // 按钮和控件
-        'auto_scroll': '自动滚动',
-        'clear': '清空',
-        'refresh': '刷新',
+        // 主界面
         'send': '发送',
         'stop': '停止',
-        'close': '关闭',
+        'clear': '清除',
+        'thinking_process': 'AI思考过程',
+        'terminal_output': '终端输出',
+        'workspace_files': '工作区文件',
+        'refresh': '刷新',
+        'select_file_to_view': '选择一个文件以查看内容',
+        'loading_file': '加载文件内容...',
+        'loading_file_error': '加载文件内容时出错',
         
-        // 状态和提示
-        'records_count': '{count} 条记录',
-        'refresh_countdown': '{seconds}秒后刷新',
-        'processing_request': '正在处理您的请求...',
+        // 状态
+        'thinking': '思考中...',
+        'processing': '处理中...',
+        'processing_request': '正在处理请求...',
         'processing_stopped': '处理已停止',
-        'file_name': '文件名',
+        'completed': '已完成',
+        'stopped': '已停止',
         
-        // 输入框占位符
-        'input_placeholder': '输入您的问题或指令...',
-        
-        // 页脚
-        'ui_made_by': 'Web界面制作:',
-        'powered_by': 'Powered by OpenManus -',
+        // 提示
+        'input_placeholder': '输入消息...',
+        'no_files': '没有文件',
         
         // 错误消息
-        'api_error': 'API错误: {status}',
+        'api_error': '接口错误: {status}',
         'send_message_error': '发送消息错误: {message}',
-        'stop_processing_error': '停止处理错误: {message}',
-        'load_workspace_error': '加载工作区文件错误: {message}',
-        'load_file_error': '加载文件内容错误: {message}',
-        
-        // 系统消息
         'error_occurred': '发生错误: {message}',
-        'processing_in_progress': '正在处理中，请等待...',
+        'stop_processing_error': '停止处理错误: {message}',
+        'load_workspace_error': '加载工作区错误: {message}',
+        'load_file_error': '加载文件错误: {message}',
         
-        // 语言切换
-        'language': '语言',
-        'switch_language': '切换语言'
+        // 格式化消息
+        'records_count': '{count} 条记录',
+        'refresh_countdown': '{seconds} 秒后刷新',
+        'system_welcome': '欢迎使用 OpenManus！我可以帮您完成各种任务。',
+        'ai_thinking': 'AI 思考过程',
+        'chat': '对话',
+        'progress': '进度'
     },
-    
-    // 英文翻译
     'en-US': {
-        // 页面标题和头部
-        'page_title': 'OpenManus Web - Web Version',
-        'app_title': 'OpenManus',
-        'app_subtitle': 'AI Assistant - Web Version',
+        // General
+        'app_title': 'OpenManus Web',
+        'loading': 'Loading...',
+        'error': 'Error',
+        'success': 'Success',
+        'cancel': 'Cancel',
+        'save': 'Save',
+        'delete': 'Delete',
+        'edit': 'Edit',
+        'confirm': 'Confirm',
         
-        // 主要区域标题
-        'processing_progress': 'Processing Progress',
-        'ai_thinking_process': 'AI Thinking Process',
-        'workspace_files': 'Workspace Files',
-        'conversation': 'Conversation',
-        
-        // 按钮和控件
-        'auto_scroll': 'Auto Scroll',
-        'clear': 'Clear',
-        'refresh': 'Refresh',
+        // Main interface
         'send': 'Send',
         'stop': 'Stop',
-        'close': 'Close',
+        'clear': 'Clear',
+        'thinking_process': 'AI Thinking Process',
+        'terminal_output': 'Terminal Output',
+        'workspace_files': 'Workspace Files',
+        'refresh': 'Refresh',
+        'select_file_to_view': 'Select a file to view content',
+        'loading_file': 'Loading file content...',
+        'loading_file_error': 'Error loading file content',
         
-        // 状态和提示
-        'records_count': '{count} Records',
-        'refresh_countdown': 'Refresh in {seconds}s',
-        'processing_request': 'Processing your request...',
+        // Status
+        'thinking': 'Thinking...',
+        'processing': 'Processing...',
+        'processing_request': 'Processing request...',
         'processing_stopped': 'Processing stopped',
-        'file_name': 'File Name',
+        'completed': 'Completed',
+        'stopped': 'Stopped',
         
-        // 输入框占位符
-        'input_placeholder': 'Enter your question or instruction...',
+        // Prompts
+        'input_placeholder': 'Type a message...',
+        'no_files': 'No files',
         
-        // 页脚
-        'ui_made_by': 'UI Made by:',
-        'powered_by': 'Powered by OpenManus -',
+        // Error messages
+        'api_error': 'API error: {status}',
+        'send_message_error': 'Error sending message: {message}',
+        'error_occurred': 'An error occurred: {message}',
+        'stop_processing_error': 'Error stopping process: {message}',
+        'load_workspace_error': 'Error loading workspace: {message}',
+        'load_file_error': 'Error loading file: {message}',
         
-        // 错误消息
-        'api_error': 'API Error: {status}',
-        'send_message_error': 'Send message error: {message}',
-        'stop_processing_error': 'Stop processing error: {message}',
-        'load_workspace_error': 'Load workspace files error: {message}',
-        'load_file_error': 'Load file content error: {message}',
-        
-        // 系统消息
-        'error_occurred': 'Error occurred: {message}',
-        'processing_in_progress': 'Processing in progress, please wait...',
-        
-        // 语言切换
-        'language': 'Language',
-        'switch_language': 'Switch Language'
+        // Formatted messages
+        'records_count': '{count} records',
+        'refresh_countdown': 'Refresh in {seconds} seconds',
+        'system_welcome': 'Welcome to OpenManus! I can help you with various tasks.',
+        'ai_thinking': 'AI Thinking Process',
+        'chat': 'Chat',
+        'progress': 'Progress'
     }
 };
 
-// 当前语言
-let currentLanguage = 'zh-CN';
-
-// 获取浏览器语言
-export function getBrowserLanguage() {
-    const browserLang = navigator.language || navigator.userLanguage;
-    // 如果浏览器语言以'zh'开头，返回中文，否则返回英文
-    return browserLang.startsWith('zh') ? 'zh-CN' : 'en-US';
+/**
+ * 获取当前语言
+ * @returns {string} 当前语言代码
+ */
+export function getCurrentLanguage() {
+    return currentLanguage;
 }
 
-// 设置当前语言
+/**
+ * 设置语言
+ * @param {string} lang - 语言代码
+ */
 export function setLanguage(lang) {
     if (translations[lang]) {
         currentLanguage = lang;
-        // 保存语言设置到localStorage
-        localStorage.setItem('openmanus_language', lang);
+        localStorage.setItem('language', lang);
+        updatePageTexts();
         return true;
     }
     return false;
 }
 
-// 获取当前语言
-export function getCurrentLanguage() {
-    return currentLanguage;
-}
-
-// 初始化语言设置
+/**
+ * 初始化语言设置
+ * @returns {string} 当前语言代码
+ */
 export function initLanguage() {
-    // 首先尝试从localStorage获取语言设置
-    const savedLang = localStorage.getItem('openmanus_language');
+    // Try to get language from localStorage
+    const savedLang = localStorage.getItem('language');
     if (savedLang && translations[savedLang]) {
         currentLanguage = savedLang;
     } else {
-        // 如果没有保存的语言设置，使用浏览器语言
-        currentLanguage = getBrowserLanguage();
+        // Try to get browser language
+        const browserLang = navigator.language || navigator.userLanguage;
+        if (browserLang && translations[browserLang]) {
+            currentLanguage = browserLang;
+        }
     }
+    
+    // 设置语言选择器的值
+    const langSelector = document.getElementById('language-selector');
+    if (langSelector) {
+        langSelector.value = currentLanguage;
+    }
+    
+    updatePageTexts();
     return currentLanguage;
 }
 
-// 获取翻译文本
-export function t(key, params = {}) {
-    // 获取当前语言的翻译
-    const translation = translations[currentLanguage];
-    
-    // 如果找不到翻译，尝试使用英文，如果英文也没有，返回键名
-    let text = translation[key] || translations['en-US'][key] || key;
-    
-    // 替换参数
-    Object.keys(params).forEach(param => {
-        text = text.replace(`{${param}}`, params[param]);
-    });
-    
-    return text;
-}
-
-// 更新页面上所有带有data-i18n属性的元素的文本
+/**
+ * 更新页面上的所有文本
+ */
 export function updatePageTexts() {
-    document.querySelectorAll('[data-i18n]').forEach(element => {
-        const key = element.getAttribute('data-i18n');
-        
-        // 如果元素是输入框或文本区域，更新placeholder
-        if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
-            if (element.getAttribute('placeholder')) {
-                element.setAttribute('placeholder', t(key));
-            }
-        } else {
-            // 否则更新内部文本
-            element.textContent = t(key);
+    const elements = document.querySelectorAll('[data-i18n]');
+    elements.forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (translations[currentLanguage][key]) {
+            el.textContent = translations[currentLanguage][key];
         }
     });
     
     // 更新页面标题
-    document.title = t('page_title');
+    if (translations[currentLanguage]['app_title']) {
+        document.title = translations[currentLanguage]['app_title'];
+    }
+    
+    // Update placeholders
+    const inputElements = document.querySelectorAll('[data-i18n-placeholder]');
+    inputElements.forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        if (translations[currentLanguage][key]) {
+            el.setAttribute('placeholder', translations[currentLanguage][key]);
+        }
+    });
+}
+
+/**
+ * 获取指定键的翻译文本
+ * @param {string} key - 翻译键
+ * @param {Object} params - 替换参数
+ * @returns {string} 翻译文本
+ */
+export function t(key, params = {}) {
+    let text = translations[currentLanguage][key] || key;
+    
+    // 替换参数
+    if (params) {
+        Object.keys(params).forEach(param => {
+            text = text.replace(`{${param}}`, params[param]);
+        });
+    }
+    
+    return text;
+}
+
+/**
+ * 获取可用语言列表
+ * @returns {Array} 可用语言列表
+ */
+export function getAvailableLanguages() {
+    return Object.keys(translations);
 }

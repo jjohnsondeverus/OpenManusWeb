@@ -1,4 +1,4 @@
-// connected_websocketManager.js - 处理WebSocket连接和消息
+// connected_websocketManager.js - Handles WebSocket connections and messages
 
 export class WebSocketManager {
     constructor(messageHandler) {
@@ -6,92 +6,101 @@ export class WebSocketManager {
         this.messageHandler = messageHandler;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
-        this.reconnectDelay = 1000; // 初始重连延迟1秒
+        this.reconnectDelay = 1000; // Initial reconnect delay (1 second)
         this.sessionId = null;
     }
 
-    // 连接WebSocket
+    // Connect to WebSocket
     connect(sessionId) {
-        // 保存会话ID
+        // Save session ID
         this.sessionId = sessionId;
 
-        // 如果已经有连接，先关闭
+        // Close existing connection if any
         if (this.socket) {
             this.socket.close();
         }
 
-        // 重置重连尝试次数
+        // Reset reconnect attempts
         this.reconnectAttempts = 0;
 
-        // 创建WebSocket连接
+        // Create WebSocket connection
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`;
 
-        console.log(`连接WebSocket: ${wsUrl}`);
+        console.log(`Connecting to WebSocket: ${wsUrl}`);
 
         this.socket = new WebSocket(wsUrl);
 
-        // 设置事件处理器
+        // Set event handlers
         this.socket.onopen = this.handleOpen.bind(this);
         this.socket.onmessage = this.handleMessage.bind(this);
         this.socket.onclose = this.handleClose.bind(this);
         this.socket.onerror = this.handleError.bind(this);
     }
 
-    // 处理连接打开
+    // Handle connection open
     handleOpen(event) {
-        console.log('WebSocket连接已建立');
-        document.getElementById('status-indicator').textContent = '已连接到服务器...';
-        // 重置重连尝试次数
+        console.log('WebSocket connection established');
+        const statusIndicator = document.getElementById('status-indicator');
+        if (statusIndicator) {
+            statusIndicator.textContent = 'Connected to server...';
+        }
+        // Reset reconnect attempts
         this.reconnectAttempts = 0;
     }
 
-    // 处理接收到的消息
+    // Handle received messages
     handleMessage(event) {
         try {
             const data = JSON.parse(event.data);
-            console.log('收到WebSocket消息:', data);
+            console.log('Received WebSocket message:', data);
 
-            // 调用消息处理回调
+            // Call message handler callback
             if (this.messageHandler) {
                 this.messageHandler(data);
             }
         } catch (error) {
-            console.error('解析WebSocket消息错误:', error);
+            console.error('Error parsing WebSocket message:', error);
         }
     }
 
-    // 处理连接关闭
+    // Handle connection close
     handleClose(event) {
-        console.log(`WebSocket连接已关闭: ${event.code} ${event.reason}`);
+        console.log(`WebSocket connection closed: ${event.code} ${event.reason}`);
 
-        // 尝试重新连接
+        // Try reconnecting
         this.attemptReconnect();
     }
 
-    // 处理连接错误
+    // Handle connection errors
     handleError(error) {
-        console.error('WebSocket错误:', error);
+        console.error('WebSocket error:', error);
     }
 
-    // 尝试重新连接
+    // Attempt to reconnect
     attemptReconnect() {
         if (!this.sessionId) {
-            console.log('没有会话ID，无法重连');
+            console.log('No session ID, cannot reconnect');
             return;
         }
 
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-            console.log('达到最大重连尝试次数，停止重连');
-            document.getElementById('status-indicator').textContent = '连接已断开，请刷新页面重试';
+            console.log('Maximum reconnection attempts reached, stopping reconnect');
+            const statusIndicator = document.getElementById('status-indicator');
+            if (statusIndicator) {
+                statusIndicator.textContent = 'Connection lost, please refresh page to retry';
+            }
             return;
         }
 
         this.reconnectAttempts++;
-        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // 指数退避
+        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1); // Exponential backoff
 
-        console.log(`尝试重连 (${this.reconnectAttempts}/${this.maxReconnectAttempts})，延迟 ${delay}ms`);
-        document.getElementById('status-indicator').textContent = `连接已断开，正在尝试重连 (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`;
+        console.log(`Attempting reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}), delay ${delay}ms`);
+        const statusIndicator = document.getElementById('status-indicator');
+        if (statusIndicator) {
+            statusIndicator.textContent = `Connection lost, attempting reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`;
+        }
 
         setTimeout(() => {
             if (this.sessionId) {
@@ -100,16 +109,16 @@ export class WebSocketManager {
         }, delay);
     }
 
-    // 发送消息
+    // Send message
     send(message) {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(JSON.stringify(message));
         } else {
-            console.error('WebSocket未连接，无法发送消息');
+            console.error('WebSocket not connected, cannot send message');
         }
     }
 
-    // 关闭连接
+    // Close connection
     close() {
         if (this.socket) {
             this.socket.close();
