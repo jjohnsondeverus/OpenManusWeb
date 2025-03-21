@@ -6,159 +6,153 @@ export class FileViewerManager {
         this.fileName = document.getElementById('file-name');
         this.fileContent = document.getElementById('file-content');
         this.closeButton = document.getElementById('close-file-viewer');
+        this.isVisible = false;
     }
 
-    // Initialize file viewer
+    // Initialize the file viewer
     init() {
-        // Initially hide file viewer
-        this.hideFileViewer();
-
-        // Bind close button event if it exists
+        console.log('Initializing FileViewerManager...');
+        
+        // Initialize elements if they don't exist
+        if (!this.fileViewer) {
+            console.warn('File viewer element not found');
+        }
+        
+        if (!this.fileName) {
+            console.warn('File name element not found');
+        }
+        
+        if (!this.fileContent) {
+            console.warn('File content element not found');
+        }
+        
+        // Set up close button if it exists
         if (this.closeButton) {
             this.closeButton.addEventListener('click', () => {
-                this.hideFileViewer();
+                this.hideFile();
             });
         } else {
-            console.error("Close file viewer button not found!");
+            console.warn('Close file viewer button not found');
         }
+
+        // Initially hide the file viewer
+        this.hideFile();
     }
 
     // Show file content
     showFile(name, content) {
-        // Set file name if element exists
-        if (this.fileName) {
-            this.fileName.textContent = name || "Unnamed File";
+        if (!this.fileViewer || !this.fileName || !this.fileContent) {
+            console.error('Cannot show file: Missing required elements');
+            return;
         }
-
-        // Set file content, format based on file type
-        if (this.fileContent) {
-            const formattedContent = this.formatCode(content, this.getFileType(name || ""));
-            this.fileContent.textContent = formattedContent;
-
-            // Apply syntax highlighting based on file type
-            this.applySyntaxHighlighting(name || "");
-        }
-
+        
+        // Update file name
+        this.fileName.textContent = name || 'Unnamed File';
+        
+        // Update file content with syntax highlighting
+        this.applySyntaxHighlighting(name, content);
+        
         // Show file viewer
-        if (this.fileViewer) {
-            this.fileViewer.style.display = 'block';
-        }
+        this.fileViewer.style.display = 'block';
+        this.isVisible = true;
     }
 
     // Hide file viewer
-    hideFileViewer() {
+    hideFile() {
         if (this.fileViewer) {
             this.fileViewer.style.display = 'none';
+            this.isVisible = false;
         }
     }
 
     // Get file type
     getFileType(fileName) {
-        if (!fileName) return '';
-        const extension = fileName.split('.').pop().toLowerCase();
-        return extension;
+        if (!fileName) return 'plaintext';
+        
+        const ext = fileName.split('.').pop().toLowerCase();
+        
+        switch (ext) {
+            case 'js':
+                return 'javascript';
+            case 'py':
+                return 'python';
+            case 'html':
+                return 'html';
+            case 'css':
+                return 'css';
+            case 'json':
+                return 'json';
+            case 'md':
+                return 'markdown';
+            case 'txt':
+                return 'plaintext';
+            default:
+                return 'plaintext';
+        }
     }
 
     // Apply syntax highlighting
-    applySyntaxHighlighting(fileName) {
-        // Get file extension
-        const extension = this.getFileType(fileName);
-
-        if (!this.fileContent) {
-            console.error("File content element not found!");
-            return;
-        }
-
-        // Set class name based on file type
-        this.fileContent.className = 'file-content';
-
-        // Add language-specific class name
-        switch (extension) {
-            case 'html':
-                this.fileContent.classList.add('language-html');
-                break;
-            case 'css':
-                this.fileContent.classList.add('language-css');
-                break;
-            case 'js':
-                this.fileContent.classList.add('language-javascript');
-                break;
-            case 'py':
-                this.fileContent.classList.add('language-python');
-                break;
-            case 'json':
-                this.fileContent.classList.add('language-json');
-                break;
-            case 'md':
-                this.fileContent.classList.add('language-markdown');
-                break;
-            default:
-                this.fileContent.classList.add('language-plaintext');
-                break;
-        }
-
-        // If Prism.js is available, trigger syntax highlighting
-        if (window.Prism && this.fileContent) {
-            window.Prism.highlightElement(this.fileContent);
+    applySyntaxHighlighting(fileName, content) {
+        if (!this.fileContent) return;
+        
+        // Clear existing content
+        this.fileContent.innerHTML = '';
+        
+        // Determine file type
+        const fileType = this.getFileType(fileName);
+        
+        // Create pre and code elements
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        
+        // Add appropriate class for syntax highlighting
+        code.className = `language-${fileType}`;
+        
+        // Format content based on file type
+        code.textContent = this.formatCode(content, fileType);
+        
+        // Add to DOM
+        pre.appendChild(code);
+        this.fileContent.appendChild(pre);
+        
+        // Apply highlighting if highlight.js is available
+        if (window.hljs) {
+            try {
+                window.hljs.highlightElement(code);
+            } catch (e) {
+                console.error('Error applying syntax highlighting:', e);
+            }
         }
     }
 
     // Format code
-    formatCode(code, language) {
-        // Simple code formatting, can be extended as needed
-        if (!code) return '';
-
-        // Simple HTML formatting
-        if (language === 'html') {
-            return this.formatHTML(code);
-        }
-
-        // JSON formatting
-        if (language === 'json') {
-            try {
-                const obj = JSON.parse(code);
-                return JSON.stringify(obj, null, 2);
-            } catch (e) {
-                return code;
+    formatCode(content, fileType) {
+        if (!content) return '';
+        
+        try {
+            // Handle special formatting for certain file types
+            if (fileType === 'json') {
+                // Try to parse and format JSON
+                try {
+                    const parsed = JSON.parse(content);
+                    return JSON.stringify(parsed, null, 2);
+                } catch (e) {
+                    console.warn('Failed to parse JSON, showing as-is');
+                    return content;
+                }
             }
-        }
-
-        return code;
-    }
-
-    // Format HTML
-    formatHTML(html) {
-        // Simple HTML formatting
-        let formatted = '';
-        let indent = 0;
-
-        // Split HTML tags into an array
-        const tags = html.split(/(<\/?[^>]+>)/g);
-
-        for (let i = 0; i < tags.length; i++) {
-            const tag = tags[i];
-
-            // If it's a closing tag, reduce indent
-            if (tag.match(/^<\//)) {
-                indent--;
+            
+            if (fileType === 'html') {
+                // We could add HTML formatting here if needed
+                return content;
             }
-
-            // Add appropriate indent
-            if (tag.match(/^</) && !tag.match(/^<\//) && !tag.match(/\/>/)) {
-                formatted += '  '.repeat(indent) + tag + '\n';
-                indent++;
-            } else if (tag.match(/^</) && tag.match(/\/>/)) {
-                // Self-closing tag
-                formatted += '  '.repeat(indent) + tag + '\n';
-            } else if (tag.match(/^<\//)) {
-                // Closing tag
-                formatted += '  '.repeat(indent) + tag + '\n';
-            } else if (tag.trim() !== '') {
-                // Text content
-                formatted += '  '.repeat(indent) + tag + '\n';
-            }
+            
+            // Default: return content as-is
+            return content;
+            
+        } catch (e) {
+            console.error('Error formatting code:', e);
+            return content;
         }
-
-        return formatted;
     }
 }

@@ -1,81 +1,80 @@
-// connected_interface.js - 主要JavaScript文件，负责初始化和协调其他模块
+// connected_interface.js - Main JavaScript file, responsible for initializing and coordinating other modules
 
-// 导入各个管理器类
+// Import manager classes
 import { WebSocketManager } from '/static/connected_websocketManager.js';
 import { ChatManager } from '/static/connected_chatManager.js';
 import { ThinkingManager } from '/static/connected_thinkingManager.js';
 import { WorkspaceManager } from '/static/connected_workspaceManager.js';
 import { FileViewerManager } from '/static/connected_fileViewerManager.js';
+import { TerminalManager } from '/static/connected_terminalManager.js';
 import { initLanguage, setLanguage, updatePageTexts, t } from '/static/i18n.js';
 
-// 主应用类
+// Main application class
 class App {
     constructor() {
         this.sessionId = null;
         this.isProcessing = false;
 
-        // 初始化各个管理器
+        // Initialize managers
         this.websocketManager = new WebSocketManager(this.handleWebSocketMessage.bind(this));
         this.chatManager = new ChatManager(this.handleSendMessage.bind(this));
         this.thinkingManager = new ThinkingManager();
         this.workspaceManager = new WorkspaceManager(this.handleFileClick.bind(this));
         this.fileViewerManager = new FileViewerManager();
+        this.terminalManager = new TerminalManager();
         
-        // 终端相关
-        this.terminal = null;
-        this.terminalOutputBuffer = [];
-
-        // 绑定UI事件
+        // Bind UI events
         this.bindEvents();
     }
 
-    // 初始化应用
+    // Initialize application
     init() {
-        console.log('OpenManus Web应用初始化...');
+        console.log('OpenManus Web application initializing...');
 
-        // 初始化语言设置
+        // Initialize language settings
         const currentLang = initLanguage();
-        document.getElementById('language-selector').value = currentLang;
+        const langSelector = document.getElementById('language-selector');
+        if (langSelector) {
+            langSelector.value = currentLang;
+        }
         updatePageTexts();
 
-        // 初始化各个管理器
+        // Initialize managers
         this.chatManager.init();
         this.thinkingManager.init();
         this.workspaceManager.init();
         this.fileViewerManager.init();
-        
-        // 初始化终端（占位符，Phase2中将使用xterm.js实现）
-        this.initTerminal();
+        this.terminalManager.init();
 
-        // 加载工作区文件
+        // Load workspace files
         this.loadWorkspaceFiles();
     }
 
-    // 绑定UI事件
+    // Bind UI events
     bindEvents() {
-        // 停止按钮
+        // Stop button
         document.getElementById('stop-btn').addEventListener('click', () => {
             if (this.sessionId && this.isProcessing) {
                 this.stopProcessing();
             }
         });
 
-        // 清除按钮
+        // Clear button
         document.getElementById('clear-btn').addEventListener('click', () => {
             this.chatManager.clearMessages();
         });
 
-        // 清除思考记录按钮
+        // Clear thinking records button
         document.getElementById('clear-thinking').addEventListener('click', () => {
             this.thinkingManager.clear();
         });
 
-        // 刷新文件按钮
+        // Refresh files button
         document.getElementById('refresh-files').addEventListener('click', () => {
             this.loadWorkspaceFiles();
         });
 
-        // 语言选择器
+        // Language selector
         document.getElementById('language-selector').addEventListener('change', (event) => {
             const selectedLang = event.target.value;
             setLanguage(selectedLang);
@@ -84,17 +83,17 @@ class App {
         });
     }
 
-    // 更新动态生成的文本
+    // Update dynamically generated text
     updateDynamicTexts() {
-        // 更新状态指示器
+        // Update status indicator
         const statusIndicator = document.getElementById('status-indicator');
-        if (statusIndicator && statusIndicator.textContent.includes('正在处理')) {
+        if (statusIndicator && statusIndicator.textContent.includes('Processing')) {
             statusIndicator.textContent = t('processing_request');
-        } else if (statusIndicator && statusIndicator.textContent.includes('处理已停止')) {
+        } else if (statusIndicator && statusIndicator.textContent.includes('stopped')) {
             statusIndicator.textContent = t('processing_stopped');
         }
 
-        // 更新记录计数
+        // Update record count
         const recordCount = document.getElementById('record-count');
         if (recordCount) {
             const count = parseInt(recordCount.textContent);
@@ -103,7 +102,7 @@ class App {
             }
         }
 
-        // 更新刷新倒计时
+        // Update refresh countdown
         const refreshCountdown = document.getElementById('refresh-countdown');
         if (refreshCountdown) {
             const seconds = refreshCountdown.textContent.match(/\d+/);
@@ -113,35 +112,35 @@ class App {
         }
     }
 
-    // 处理发送消息
+    // Handle send message
     async handleSendMessage(message) {
         if (this.isProcessing) {
-            console.log('正在处理中，请等待...');
+            console.log('Already processing, please wait...');
             return;
         }
 
         this.isProcessing = true;
         
-        // 获取按钮并检查它们是否存在
+        // Get buttons and check if they exist
         const sendBtn = document.getElementById('send-btn');
         const stopBtn = document.getElementById('stop-btn');
         
         if (sendBtn) sendBtn.disabled = true;
         if (stopBtn) stopBtn.disabled = false;
         
-        // 检查状态指示器是否存在，不存在则创建
+        // Check if status indicator exists, create if not
         let statusIndicator = document.getElementById('status-indicator');
         if (!statusIndicator) {
             statusIndicator = document.createElement('div');
             statusIndicator.id = 'status-indicator';
             statusIndicator.className = 'status-indicator';
             
-            // 将状态指示器添加到输入容器下方
+            // Add status indicator below input container
             const inputContainer = document.querySelector('.input-container');
             if (inputContainer) {
                 inputContainer.parentNode.insertBefore(statusIndicator, inputContainer.nextSibling);
             } else {
-                console.warn('未找到合适的位置放置状态指示器');
+                console.warn('Could not find suitable location for status indicator');
             }
         }
         
@@ -150,7 +149,7 @@ class App {
         }
 
         try {
-            // 发送API请求创建新会话
+            // Send API request to create new session
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
@@ -166,16 +165,16 @@ class App {
             const data = await response.json();
             this.sessionId = data.session_id;
 
-            // 添加用户消息到聊天
+            // Add user message to chat
             this.chatManager.addUserMessage(message);
 
-            // 连接WebSocket
+            // Connect WebSocket
             this.websocketManager.connect(this.sessionId);
 
-            // 重置思考记录
+            // Reset thinking records
             this.thinkingManager.clear();
             
-            // 清空终端输出
+            // Clear terminal output
             this.clearTerminalOutput();
 
         } catch (error) {
@@ -188,56 +187,56 @@ class App {
         }
     }
 
-    // 处理WebSocket消息
+    // Handle WebSocket messages
     handleWebSocketMessage(data) {
-        console.log('收到WebSocket消息:', data);
+        console.log('Received WebSocket message:', data);
 
-        // 更新处理状态
+        // Update processing status
         if (data.status) {
             this.isProcessing = data.status === 'processing' || data.status === 'thinking';
 
-            // 更新UI状态
+            // Update UI status
             document.getElementById('stop-btn').disabled = !this.isProcessing;
             document.getElementById('send-btn').disabled = this.isProcessing;
             
-            // 显示状态
+            // Display status
             this.chatManager.updateStatus(data.status);
             
-            // 更新进度条
+            // Update progress bar
             if (data.progress) {
                 this.updateProgressBar(data.progress.percentage || 0);
             }
         }
 
-        // 处理思考步骤
+        // Handle thinking steps
         if (data.thinking_steps && data.thinking_steps.length > 0) {
             this.thinkingManager.addThinkingSteps(data.thinking_steps);
         }
 
-        // 处理聊天消息
+        // Handle chat messages
         if (data.log && data.log.length > 0) {
             this.chatManager.addMessages(data.log);
         }
         
-        // 处理终端输出
+        // Handle terminal output
         if (data.terminal_output && data.terminal_output.length > 0) {
-            this.handleTerminalOutput(data.terminal_output);
+            this.terminalManager.addOutput(data.terminal_output);
         }
 
-        // 处理最终结果
+        // Handle final result
         if (data.result && !this.isProcessing) {
-            console.log('处理完成，结果:', data.result);
+            console.log('Processing complete, result:', data.result);
             this.chatManager.addBotMessage(data.result);
         }
 
-        // 处理错误消息
+        // Handle error messages
         if (data.error) {
-            console.error('WebSocket错误:', data.error);
+            console.error('WebSocket error:', data.error);
             this.chatManager.addErrorMessage(data.error);
         }
     }
 
-    // 停止处理
+    // Stop processing
     async stopProcessing() {
         if (!this.sessionId) return;
 
@@ -250,7 +249,7 @@ class App {
                 throw new Error(t('api_error', { status: response.status }));
             }
 
-            console.log('处理已停止');
+            console.log('Processing stopped');
             this.chatManager.addSystemMessage(t('processing_stopped'));
             document.getElementById('status-indicator').textContent = t('processing_stopped');
             document.getElementById('send-btn').disabled = false;
@@ -263,7 +262,7 @@ class App {
         }
     }
 
-    // 加载工作区文件
+    // Load workspace files
     async loadWorkspaceFiles() {
         try {
             const response = await fetch('/api/files');
@@ -276,10 +275,11 @@ class App {
 
         } catch (error) {
             console.error(t('load_workspace_error', { message: error.message }), error);
+            this.terminalManager.addLine(`Error loading workspace files: ${error.message}`, 'error');
         }
     }
 
-    // 处理文件点击
+    // Handle file click
     async handleFileClick(filePath) {
         try {
             const response = await fetch(`/api/files/${encodeURIComponent(filePath)}`);
@@ -296,125 +296,17 @@ class App {
         }
     }
 
-    // 初始化终端（占位符实现）
-    initTerminal() {
-        const terminalContainer = document.getElementById('terminal-container');
-        if (!terminalContainer) {
-            console.warn('终端容器元素不存在，跳过终端初始化');
-            return;
-        }
-        
-        terminalContainer.innerHTML = '<div class="terminal-placeholder">' + 
-            '<div class="terminal-content">' +
-            '<div class="terminal-header">OpenManus Terminal</div>' +
-            '<div class="terminal-output" id="terminal-output"></div>' +
-            '</div></div>';
-        
-        // 添加简单样式
-        const style = document.createElement('style');
-        style.textContent = `
-            .terminal-placeholder {
-                display: flex;
-                flex-direction: column;
-                height: 100%;
-                width: 100%;
-                background-color: #1e293b;
-                color: #e2e8f0;
-                font-family: 'JetBrains Mono', monospace;
-                overflow: auto;
-            }
-            .terminal-content {
-                flex: 1;
-                padding: 0.5rem;
-                display: flex;
-                flex-direction: column;
-            }
-            .terminal-header {
-                color: #94a3b8;
-                padding-bottom: 0.5rem;
-                border-bottom: 1px solid #334155;
-                margin-bottom: 0.5rem;
-                font-size: 0.9rem;
-            }
-            .terminal-output {
-                flex: 1;
-                overflow-y: auto;
-                white-space: pre-wrap;
-                font-size: 0.8rem;
-                line-height: 1.5;
-            }
-            .terminal-line {
-                margin-bottom: 0.25rem;
-            }
-        `;
-        document.head.appendChild(style);
-        
-        // 设置终端输出元素引用
-        this.terminalOutput = document.getElementById('terminal-output');
-        
-        // 添加一些初始信息
-        this.handleTerminalOutput("Terminal initialized. Ready for commands.");
-    }
-    
-    // 清空终端输出
+    // Clear terminal output
     clearTerminalOutput() {
-        this.terminalOutputBuffer = [];
-        const terminalOutput = document.querySelector('.terminal-output');
-        if (terminalOutput) {
-            terminalOutput.innerHTML = '';
-        }
+        this.terminalManager.clear();
     }
     
-    // 处理终端输出
+    // Handle terminal output - Deprecated, use TerminalManager instead
     handleTerminalOutput(output) {
-        // 如果是数组，对每个元素调用处理函数
-        if (Array.isArray(output)) {
-            output.forEach(item => this.handleTerminalOutput(item));
-            return;
-        }
-        
-        // 确保terminalOutput元素存在
-        if (!this.terminalOutput) {
-            this.terminalOutput = document.getElementById('terminal-output');
-            if (!this.terminalOutput) {
-                console.warn('终端输出元素不存在，无法显示输出');
-                this.terminalOutputBuffer.push(output); // 将输出保存在缓冲区
-                return;
-            }
-        }
-        
-        // 创建新的终端行
-        const line = document.createElement('div');
-        line.className = 'terminal-line';
-        
-        // 处理不同类型的输出
-        if (typeof output === 'string') {
-            line.textContent = output;
-        } else if (output && typeof output === 'object') {
-            // 如果是对象，尝试提取有用的信息
-            if (output.message) {
-                line.textContent = output.message;
-            } else if (output.output) {
-                line.textContent = output.output;
-            } else {
-                try {
-                    line.textContent = JSON.stringify(output);
-                } catch (e) {
-                    line.textContent = '[Object]';
-                }
-            }
-        } else {
-            line.textContent = String(output);
-        }
-        
-        // 添加到终端
-        this.terminalOutput.appendChild(line);
-        
-        // 滚动到底部
-        this.terminalOutput.scrollTop = this.terminalOutput.scrollHeight;
+        this.terminalManager.addOutput(output);
     }
     
-    // 更新进度条
+    // Update progress bar
     updateProgressBar(percentage) {
         const progressBar = document.getElementById('progress-bar');
         if (progressBar) {
@@ -422,7 +314,7 @@ class App {
         }
     }
     
-    // HTML转义
+    // HTML escape
     escapeHtml(unsafe) {
         return unsafe
             .replace(/&/g, "&amp;")
@@ -433,11 +325,11 @@ class App {
     }
 }
 
-// 当DOM加载完成后初始化应用
+// Initialize application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     const app = new App();
     app.init();
 
-    // 将app实例暴露到全局，方便调试
+    // Expose app instance globally for debugging
     window.app = app;
 });
