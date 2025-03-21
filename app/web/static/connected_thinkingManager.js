@@ -2,10 +2,10 @@
 
 export class ThinkingManager {
     constructor() {
-        this.container = document.getElementById('thinking-container');
-        this.recordCount = document.getElementById('record-count');
-        this.timelineContainer = document.getElementById('timeline-container');
-        this.autoScrollCheckbox = document.getElementById('auto-scroll');
+        this.container = null;
+        this.recordCount = null;
+        this.timelineContainer = null;
+        this.autoScrollCheckbox = null;
         this.records = [];
     }
 
@@ -13,7 +13,13 @@ export class ThinkingManager {
     init() {
         console.log('Initializing ThinkingManager...');
         
-        // Initialize containers if they don't exist
+        // Initialize containers
+        this.container = document.getElementById('thinking-container');
+        this.recordCount = document.getElementById('record-count');
+        this.timelineContainer = document.getElementById('thinking-timeline');
+        this.autoScrollCheckbox = document.getElementById('auto-scroll');
+        
+        // Check if elements exist
         if (!this.container) {
             console.warn('Thinking container not found');
         }
@@ -26,7 +32,7 @@ export class ThinkingManager {
             console.warn('Record count element not found');
         }
 
-        // Set default auto-scroll value if the checkbox doesn't exist
+        // Check for auto-scroll checkbox
         if (!this.autoScrollCheckbox) {
             console.warn('Auto-scroll checkbox not found');
         }
@@ -59,7 +65,7 @@ export class ThinkingManager {
 
     // Add multiple thinking steps
     addThinkingSteps(steps) {
-        if (!Array.isArray(steps)) return;
+        if (!Array.isArray(steps) || !this.timelineContainer) return;
         
         steps.forEach(step => {
             this.addThinkingStep(step);
@@ -139,7 +145,8 @@ export class ThinkingManager {
     // Scroll to bottom of container
     scrollToBottom() {
         if (this.timelineContainer) {
-            this.timelineContainer.scrollTop = this.timelineContainer.scrollHeight;
+            const container = this.timelineContainer.parentElement || this.timelineContainer;
+            container.scrollTop = container.scrollHeight;
         }
     }
 }

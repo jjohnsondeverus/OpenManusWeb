@@ -2,10 +2,10 @@
 
 export class FileViewerManager {
     constructor() {
-        this.fileViewer = document.getElementById('file-viewer');
-        this.fileName = document.getElementById('file-name');
-        this.fileContent = document.getElementById('file-content');
-        this.closeButton = document.getElementById('close-file-viewer');
+        this.fileViewer = null;
+        this.fileName = null;
+        this.fileContent = null;
+        this.closeButton = null;
         this.isVisible = false;
     }
 
@@ -13,7 +13,13 @@ export class FileViewerManager {
     init() {
         console.log('Initializing FileViewerManager...');
         
-        // Initialize elements if they don't exist
+        // Initialize DOM elements
+        this.fileViewer = document.getElementById('file-viewer');
+        this.fileName = document.getElementById('file-name');
+        this.fileContent = document.getElementById('file-content');
+        this.closeButton = document.getElementById('close-file-viewer');
+        
+        // Check if elements exist
         if (!this.fileViewer) {
             console.warn('File viewer element not found');
         }
@@ -41,16 +47,20 @@ export class FileViewerManager {
 
     // Show file content
     showFile(name, content) {
-        if (!this.fileViewer || !this.fileName || !this.fileContent) {
-            console.error('Cannot show file: Missing required elements');
+        if (!this.fileViewer) {
+            console.error('Cannot show file: File viewer element not found');
             return;
         }
         
         // Update file name
-        this.fileName.textContent = name || 'Unnamed File';
+        if (this.fileName) {
+            this.fileName.textContent = name || 'Unnamed File';
+        }
         
         // Update file content with syntax highlighting
-        this.applySyntaxHighlighting(name, content);
+        if (this.fileContent) {
+            this.applySyntaxHighlighting(name, content);
+        }
         
         // Show file viewer
         this.fileViewer.style.display = 'block';
@@ -93,10 +103,19 @@ export class FileViewerManager {
 
     // Apply syntax highlighting
     applySyntaxHighlighting(fileName, content) {
-        if (!this.fileContent) return;
+        if (!this.fileContent) {
+            console.error('Cannot apply syntax highlighting: File content element not found');
+            return;
+        }
         
         // Clear existing content
         this.fileContent.innerHTML = '';
+        
+        // Fallback for empty content
+        if (!content) {
+            this.fileContent.textContent = 'Empty file or content unavailable';
+            return;
+        }
         
         // Determine file type
         const fileType = this.getFileType(fileName);

@@ -2,7 +2,7 @@
 
 export class TerminalManager {
     constructor() {
-        this.terminalContainer = document.getElementById('terminal-output');
+        this.terminalContainer = null;
         this.maxLines = 1000; // Maximum number of lines to keep in the terminal
         this.lineCount = 0;
     }
@@ -11,17 +11,30 @@ export class TerminalManager {
     init() {
         console.log('Initializing TerminalManager...');
         
+        // Find terminal output container
+        this.terminalContainer = document.getElementById('terminal-output');
+        
         // Create terminal container if it doesn't exist
         if (!this.terminalContainer) {
             console.warn('Terminal container not found, creating one');
-            this.terminalContainer = document.createElement('div');
-            this.terminalContainer.id = 'terminal-output';
-            this.terminalContainer.className = 'terminal-output';
             
-            // Find terminal section to append to
-            const terminalSection = document.querySelector('.terminal-section .section-content');
+            // Try to find terminal section first
+            const terminalSection = document.querySelector('.terminal-section');
+            
             if (terminalSection) {
-                terminalSection.appendChild(this.terminalContainer);
+                // Create terminal output container
+                this.terminalContainer = document.createElement('div');
+                this.terminalContainer.id = 'terminal-output';
+                this.terminalContainer.className = 'terminal-output';
+                
+                // Find terminal container to append to
+                const containerElement = terminalSection.querySelector('.terminal-container');
+                if (containerElement) {
+                    containerElement.appendChild(this.terminalContainer);
+                } else {
+                    // If container doesn't exist, append directly to section
+                    terminalSection.appendChild(this.terminalContainer);
+                }
             } else {
                 console.error('Terminal section not found, cannot create terminal output container');
                 return;
@@ -69,7 +82,7 @@ export class TerminalManager {
 
     // Add multiple lines at once
     addOutput(output) {
-        if (!output) return;
+        if (!output || !this.terminalContainer) return;
         
         // Handle array of outputs
         if (Array.isArray(output)) {
@@ -133,12 +146,16 @@ export class TerminalManager {
     // Scroll terminal to bottom
     scrollToBottom() {
         if (this.terminalContainer) {
-            this.terminalContainer.scrollTop = this.terminalContainer.scrollHeight;
+            // Find the container's parent to scroll
+            const container = this.terminalContainer.closest('.terminal-container') || this.terminalContainer;
+            container.scrollTop = container.scrollHeight;
         }
     }
     
     // HTML escape utility
     escapeHtml(unsafe) {
+        if (typeof unsafe !== 'string') return '';
+        
         return unsafe
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")

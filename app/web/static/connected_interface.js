@@ -1,335 +1,250 @@
 // connected_interface.js - Main JavaScript file, responsible for initializing and coordinating other modules
 
 // Import manager classes
-import { WebSocketManager } from '/static/connected_websocketManager.js';
-import { ChatManager } from '/static/connected_chatManager.js';
-import { ThinkingManager } from '/static/connected_thinkingManager.js';
-import { WorkspaceManager } from '/static/connected_workspaceManager.js';
-import { FileViewerManager } from '/static/connected_fileViewerManager.js';
-import { TerminalManager } from '/static/connected_terminalManager.js';
-import { initLanguage, setLanguage, updatePageTexts, t } from '/static/i18n.js';
+import { WebSocketManager } from './connected_websocketManager.js';
+import { ChatManager } from './connected_chatManager.js';
+import { ThinkingManager } from './connected_thinkingManager.js';
+import { WorkspaceManager } from './connected_workspaceManager.js';
+import { FileViewerManager } from './connected_fileViewerManager.js';
+import { TerminalManager } from './connected_terminalManager.js';
+import { loadText, updateLanguageElements } from './i18n.js';
 
-// Main application class
+// Main App class
 class App {
     constructor() {
-        this.sessionId = null;
-        this.isProcessing = false;
-
-        // Initialize managers
-        this.websocketManager = new WebSocketManager(this.handleWebSocketMessage.bind(this));
-        this.chatManager = new ChatManager(this.handleSendMessage.bind(this));
+        console.log("Initializing App...");
+        
+        // Create manager instances
+        this.wsManager = new WebSocketManager();
+        this.chatManager = new ChatManager();
         this.thinkingManager = new ThinkingManager();
-        this.workspaceManager = new WorkspaceManager(this.handleFileClick.bind(this));
+        this.workspaceManager = new WorkspaceManager();
         this.fileViewerManager = new FileViewerManager();
         this.terminalManager = new TerminalManager();
         
-        // Bind UI events
-        this.bindEvents();
+        // Initialize application
+        this.init();
     }
-
-    // Initialize application
+    
+    // Initialize app
     init() {
-        console.log('OpenManus Web application initializing...');
-
-        // Initialize language settings
-        const currentLang = initLanguage();
-        const langSelector = document.getElementById('language-selector');
-        if (langSelector) {
-            langSelector.value = currentLang;
+        try {
+            // Initialize all managers
+            console.log("Initializing managers...");
+            
+            // Initialize terminal manager first (for logging)
+            this.terminalManager.init();
+            this.terminalManager.addLine("Initializing application...", "system");
+            
+            // Initialize other managers
+            this.wsManager.init();
+            this.chatManager.init();
+            this.thinkingManager.init();
+            
+            // Initialize file-related managers
+            this.fileViewerManager.init();
+            this.workspaceManager.init((file) => {
+                // File click callback
+                if (file && file.path) {
+                    this.fileViewerManager.showFile(file.path, file.name);
+                }
+            });
+            
+            // Bind events
+            this.bindEvents();
+            
+            // Update all language elements
+            updateLanguageElements();
+            
+            console.log("App initialization complete");
+            this.terminalManager.addLine("Application initialized successfully", "system");
+            
+            // Load workspace files
+            this.loadWorkspace();
+        } catch (error) {
+            console.error("Error during app initialization:", error);
+            this.terminalManager.addLine(`Error initializing application: ${error.message}`, "error");
         }
-        updatePageTexts();
-
-        // Initialize managers
-        this.chatManager.init();
-        this.thinkingManager.init();
-        this.workspaceManager.init();
-        this.fileViewerManager.init();
-        this.terminalManager.init();
-
-        // Load workspace files
-        this.loadWorkspaceFiles();
     }
-
+    
     // Bind UI events
     bindEvents() {
-        // Stop button
-        document.getElementById('stop-btn').addEventListener('click', () => {
-            if (this.sessionId && this.isProcessing) {
-                this.stopProcessing();
-            }
-        });
-
-        // Clear button
-        document.getElementById('clear-btn').addEventListener('click', () => {
-            this.chatManager.clearMessages();
-        });
-
-        // Clear thinking records button
-        document.getElementById('clear-thinking').addEventListener('click', () => {
-            this.thinkingManager.clear();
-        });
-
-        // Refresh files button
-        document.getElementById('refresh-files').addEventListener('click', () => {
-            this.loadWorkspaceFiles();
-        });
-
-        // Language selector
-        document.getElementById('language-selector').addEventListener('change', (event) => {
-            const selectedLang = event.target.value;
-            setLanguage(selectedLang);
-            updatePageTexts();
-            this.updateDynamicTexts();
-        });
-    }
-
-    // Update dynamically generated text
-    updateDynamicTexts() {
-        // Update status indicator
-        const statusIndicator = document.getElementById('status-indicator');
-        if (statusIndicator && statusIndicator.textContent.includes('Processing')) {
-            statusIndicator.textContent = t('processing_request');
-        } else if (statusIndicator && statusIndicator.textContent.includes('stopped')) {
-            statusIndicator.textContent = t('processing_stopped');
-        }
-
-        // Update record count
-        const recordCount = document.getElementById('record-count');
-        if (recordCount) {
-            const count = parseInt(recordCount.textContent);
-            if (!isNaN(count)) {
-                recordCount.textContent = t('records_count', { count });
-            }
-        }
-
-        // Update refresh countdown
-        const refreshCountdown = document.getElementById('refresh-countdown');
-        if (refreshCountdown) {
-            const seconds = refreshCountdown.textContent.match(/\d+/);
-            if (seconds) {
-                refreshCountdown.textContent = t('refresh_countdown', { seconds: seconds[0] });
-            }
-        }
-    }
-
-    // Handle send message
-    async handleSendMessage(message) {
-        if (this.isProcessing) {
-            console.log('Already processing, please wait...');
-            return;
-        }
-
-        this.isProcessing = true;
+        // Message sending
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
         
-        // Get buttons and check if they exist
-        const sendBtn = document.getElementById('send-btn');
-        const stopBtn = document.getElementById('stop-btn');
-        
-        if (sendBtn) sendBtn.disabled = true;
-        if (stopBtn) stopBtn.disabled = false;
-        
-        // Check if status indicator exists, create if not
-        let statusIndicator = document.getElementById('status-indicator');
-        if (!statusIndicator) {
-            statusIndicator = document.createElement('div');
-            statusIndicator.id = 'status-indicator';
-            statusIndicator.className = 'status-indicator';
-            
-            // Add status indicator below input container
-            const inputContainer = document.querySelector('.input-container');
-            if (inputContainer) {
-                inputContainer.parentNode.insertBefore(statusIndicator, inputContainer.nextSibling);
-            } else {
-                console.warn('Could not find suitable location for status indicator');
-            }
-        }
-        
-        if (statusIndicator) {
-            statusIndicator.textContent = t('processing_request');
-        }
-
-        try {
-            // Send API request to create new session
-            const response = await fetch('/api/chat', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ prompt: message }),
+        // Check if elements exist before binding
+        if (messageInput && sendButton) {
+            // Send button click
+            sendButton.addEventListener('click', () => {
+                this.sendMessage();
             });
-
-            if (!response.ok) {
-                throw new Error(t('api_error', { status: response.status }));
+            
+            // Enter key in input
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.sendMessage();
+                }
+            });
+        } else {
+            console.error("Could not find message input or send button elements");
+        }
+        
+        // Workspace refresh
+        const refreshButton = document.getElementById('refresh-workspace');
+        if (refreshButton) {
+            refreshButton.addEventListener('click', () => {
+                this.loadWorkspace();
+            });
+        } else {
+            console.warn("Refresh workspace button not found");
+        }
+        
+        // WebSocket message handling
+        this.wsManager.onMessage((data) => {
+            this.handleWebSocketMessage(data);
+        });
+        
+        // WebSocket connection status
+        this.wsManager.onStatusChange((isConnected) => {
+            const statusElement = document.getElementById('status-indicator');
+            if (statusElement) {
+                statusElement.className = isConnected ? 'connected' : 'disconnected';
+                statusElement.title = isConnected ? 'Connected' : 'Disconnected';
             }
-
-            const data = await response.json();
-            this.sessionId = data.session_id;
-
+        });
+        
+        // Language selector
+        const languageSelector = document.getElementById('language-selector');
+        if (languageSelector) {
+            languageSelector.addEventListener('change', (e) => {
+                const selectedLanguage = e.target.value;
+                this.changeLanguage(selectedLanguage);
+            });
+        }
+    }
+    
+    // Send message to backend
+    sendMessage() {
+        const messageInput = document.getElementById('message-input');
+        if (!messageInput) return;
+        
+        const message = messageInput.value.trim();
+        if (message) {
             // Add user message to chat
             this.chatManager.addUserMessage(message);
-
-            // Connect WebSocket
-            this.websocketManager.connect(this.sessionId);
-
-            // Reset thinking records
-            this.thinkingManager.clear();
             
-            // Clear terminal output
-            this.clearTerminalOutput();
-
-        } catch (error) {
-            console.error(t('send_message_error', { message: error.message }), error);
-            this.chatManager.addSystemMessage(t('error_occurred', { message: error.message }));
-            this.isProcessing = false;
-            document.getElementById('send-btn').disabled = false;
-            document.getElementById('stop-btn').disabled = true;
-            document.getElementById('status-indicator').textContent = '';
+            // Clear input
+            messageInput.value = '';
+            
+            // Add to terminal
+            this.terminalManager.addLine(message, 'command');
+            
+            // Send to backend
+            this.wsManager.sendMessage({
+                type: 'user_message',
+                content: message
+            });
+            
+            // Show thinking indicator
+            this.chatManager.showThinking();
         }
     }
-
+    
     // Handle WebSocket messages
     handleWebSocketMessage(data) {
-        console.log('Received WebSocket message:', data);
-
-        // Update processing status
-        if (data.status) {
-            this.isProcessing = data.status === 'processing' || data.status === 'thinking';
-
-            // Update UI status
-            document.getElementById('stop-btn').disabled = !this.isProcessing;
-            document.getElementById('send-btn').disabled = this.isProcessing;
-            
-            // Display status
-            this.chatManager.updateStatus(data.status);
-            
-            // Update progress bar
-            if (data.progress) {
-                this.updateProgressBar(data.progress.percentage || 0);
-            }
-        }
-
-        // Handle thinking steps
-        if (data.thinking_steps && data.thinking_steps.length > 0) {
-            this.thinkingManager.addThinkingSteps(data.thinking_steps);
-        }
-
-        // Handle chat messages
-        if (data.log && data.log.length > 0) {
-            this.chatManager.addMessages(data.log);
-        }
-        
-        // Handle terminal output
-        if (data.terminal_output && data.terminal_output.length > 0) {
-            this.terminalManager.addOutput(data.terminal_output);
-        }
-
-        // Handle final result
-        if (data.result && !this.isProcessing) {
-            console.log('Processing complete, result:', data.result);
-            this.chatManager.addBotMessage(data.result);
-        }
-
-        // Handle error messages
-        if (data.error) {
-            console.error('WebSocket error:', data.error);
-            this.chatManager.addErrorMessage(data.error);
-        }
-    }
-
-    // Stop processing
-    async stopProcessing() {
-        if (!this.sessionId) return;
-
         try {
-            const response = await fetch(`/api/chat/${this.sessionId}/stop`, {
-                method: 'POST',
-            });
-
-            if (!response.ok) {
-                throw new Error(t('api_error', { status: response.status }));
+            if (!data || !data.type) {
+                console.error("Invalid WebSocket message received:", data);
+                return;
             }
-
-            console.log('Processing stopped');
-            this.chatManager.addSystemMessage(t('processing_stopped'));
-            document.getElementById('status-indicator').textContent = t('processing_stopped');
-            document.getElementById('send-btn').disabled = false;
-            document.getElementById('stop-btn').disabled = true;
-            this.isProcessing = false;
-
+            
+            console.log(`Received ${data.type} message from backend`);
+            
+            switch (data.type) {
+                case 'assistant_message':
+                    this.chatManager.addAssistantMessage(data.content);
+                    break;
+                    
+                case 'thinking_step':
+                    if (data.steps) {
+                        this.thinkingManager.addThinkingSteps(data.steps);
+                    }
+                    break;
+                    
+                case 'terminal_output':
+                    this.terminalManager.addOutput(data.content);
+                    break;
+                    
+                case 'workspace_update':
+                    if (data.workspaces) {
+                        this.workspaceManager.updateWorkspaces(data.workspaces);
+                    }
+                    break;
+                    
+                case 'error':
+                    console.error("Error from backend:", data.content);
+                    this.chatManager.addErrorMessage(data.content);
+                    this.terminalManager.addLine(data.content, 'error');
+                    break;
+                    
+                default:
+                    console.warn("Unknown message type:", data.type);
+            }
         } catch (error) {
-            console.error(t('stop_processing_error', { message: error.message }), error);
-            this.chatManager.addSystemMessage(t('error_occurred', { message: error.message }));
+            console.error("Error handling WebSocket message:", error);
+            this.terminalManager.addLine(`Error handling message: ${error.message}`, "error");
         }
     }
-
+    
     // Load workspace files
-    async loadWorkspaceFiles() {
-        try {
-            const response = await fetch('/api/files');
-            if (!response.ok) {
-                throw new Error(t('api_error', { status: response.status }));
-            }
-
-            const data = await response.json();
-            this.workspaceManager.updateWorkspaces(data.workspaces);
-
-        } catch (error) {
-            console.error(t('load_workspace_error', { message: error.message }), error);
-            this.terminalManager.addLine(`Error loading workspace files: ${error.message}`, 'error');
-        }
-    }
-
-    // Handle file click
-    async handleFileClick(filePath) {
-        try {
-            const response = await fetch(`/api/files/${encodeURIComponent(filePath)}`);
-            if (!response.ok) {
-                throw new Error(t('api_error', { status: response.status }));
-            }
-
-            const data = await response.json();
-            this.fileViewerManager.showFile(data.name, data.content);
-
-        } catch (error) {
-            console.error(t('load_file_error', { message: error.message }), error);
-            this.chatManager.addSystemMessage(t('error_occurred', { message: error.message }));
-        }
-    }
-
-    // Clear terminal output
-    clearTerminalOutput() {
-        this.terminalManager.clear();
+    loadWorkspace() {
+        console.log("Loading workspace files...");
+        this.terminalManager.addLine("Loading workspace files...", "system");
+        
+        this.wsManager.sendMessage({
+            type: 'get_workspace'
+        });
     }
     
-    // Handle terminal output - Deprecated, use TerminalManager instead
-    handleTerminalOutput(output) {
-        this.terminalManager.addOutput(output);
-    }
-    
-    // Update progress bar
-    updateProgressBar(percentage) {
-        const progressBar = document.getElementById('progress-bar');
-        if (progressBar) {
-            progressBar.style.width = `${percentage}%`;
+    // Change interface language
+    changeLanguage(language) {
+        console.log(`Changing language to ${language}`);
+        
+        // Update language in i18n.js
+        if (typeof window.setLanguage === 'function') {
+            window.setLanguage(language);
+            
+            // Update all text elements
+            updateLanguageElements();
+            
+            // Add to terminal
+            this.terminalManager.addLine(`Language changed to ${language}`, "system");
+        } else {
+            console.error("setLanguage function not available");
         }
-    }
-    
-    // HTML escape
-    escapeHtml(unsafe) {
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
     }
 }
 
-// Initialize application when DOM is loaded
+// Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    const app = new App();
-    app.init();
-
-    // Expose app instance globally for debugging
-    window.app = app;
+    try {
+        console.log("DOM loaded, starting application");
+        window.app = new App();
+    } catch (error) {
+        console.error("Error starting application:", error);
+        
+        // Try to show error in terminal if possible
+        const terminalContainer = document.getElementById('terminal-output');
+        if (terminalContainer) {
+            const errorLine = document.createElement('div');
+            errorLine.className = 'terminal-line error';
+            errorLine.innerHTML = `<span class="error-prefix">CRITICAL ERROR:</span> ${error.message}`;
+            terminalContainer.appendChild(errorLine);
+        }
+        
+        // Show alert as fallback
+        alert(`Error starting application: ${error.message}`);
+    }
 });

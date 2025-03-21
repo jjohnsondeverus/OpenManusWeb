@@ -3,8 +3,8 @@
 export class WorkspaceManager {
     constructor(fileClickCallback) {
         this.workspaces = [];
-        this.workspaceContainer = document.getElementById('workspace-container');
-        this.refreshCountdown = document.getElementById('refresh-countdown');
+        this.workspaceContainer = null;
+        this.refreshCountdown = null;
         this.fileClickCallback = fileClickCallback || (() => {});
         this.refreshTimer = null;
         this.refreshInterval = 5000; // 5 seconds
@@ -13,6 +13,19 @@ export class WorkspaceManager {
     // Initialize workspace manager
     init() {
         console.log('Initializing WorkspaceManager...');
+        
+        // Initialize DOM elements
+        this.workspaceContainer = document.getElementById('workspace-container');
+        this.refreshCountdown = document.getElementById('refresh-countdown');
+        
+        if (!this.workspaceContainer) {
+            console.error('Workspace container not found');
+        }
+        
+        if (!this.refreshCountdown) {
+            console.warn('Refresh countdown element not found');
+        }
+        
         this.startRefreshTimer();
     }
 
@@ -29,27 +42,29 @@ export class WorkspaceManager {
 
     // Render workspaces and files
     renderWorkspaces() {
-        // Clear current content
-        if (this.workspaceContainer) {
-            this.workspaceContainer.innerHTML = '';
-
-            // Show message if no workspaces
-            if (this.workspaces.length === 0) {
-                const noWorkspacesMsg = document.createElement('div');
-                noWorkspacesMsg.className = 'no-workspaces';
-                noWorkspacesMsg.textContent = 'No workspace files';
-                this.workspaceContainer.appendChild(noWorkspacesMsg);
-                return;
-            }
-
-            // Create workspace items
-            this.workspaces.forEach(workspace => {
-                const workspaceItem = this.createWorkspaceItem(workspace);
-                this.workspaceContainer.appendChild(workspaceItem);
-            });
-        } else {
+        // Check if the workspace container exists
+        if (!this.workspaceContainer) {
             console.error('Workspace container not found');
+            return;
         }
+        
+        // Clear current content
+        this.workspaceContainer.innerHTML = '';
+
+        // Show message if no workspaces
+        if (this.workspaces.length === 0) {
+            const noWorkspacesMsg = document.createElement('div');
+            noWorkspacesMsg.className = 'no-workspaces';
+            noWorkspacesMsg.textContent = 'No workspace files';
+            this.workspaceContainer.appendChild(noWorkspacesMsg);
+            return;
+        }
+
+        // Create workspace items
+        this.workspaces.forEach(workspace => {
+            const workspaceItem = this.createWorkspaceItem(workspace);
+            this.workspaceContainer.appendChild(workspaceItem);
+        });
     }
 
     // Create workspace item element
