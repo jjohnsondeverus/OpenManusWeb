@@ -20,6 +20,10 @@ class App {
         this.thinkingManager = new ThinkingManager();
         this.workspaceManager = new WorkspaceManager(this.handleFileClick.bind(this));
         this.fileViewerManager = new FileViewerManager();
+        
+        // 终端相关
+        this.terminal = null;
+        this.terminalOutputBuffer = [];
 
         // 绑定UI事件
         this.bindEvents();
@@ -39,6 +43,9 @@ class App {
         this.thinkingManager.init();
         this.workspaceManager.init();
         this.fileViewerManager.init();
+        
+        // 初始化终端（占位符，Phase2中将使用xterm.js实现）
+        this.initTerminal();
 
         // 加载工作区文件
         this.loadWorkspaceFiles();
@@ -152,19 +159,18 @@ class App {
 
     // 处理WebSocket消息
     handleWebSocketMessage(data) {
-        // 处理状态更新
-        if (data.status) {
-            if (data.status === 'completed' || data.status === 'error' || data.status === 'stopped') {
-                this.isProcessing = false;
-                document.getElementById('send-btn').disabled = false;
-                document.getElementById('stop-btn').disabled = true;
-                document.getElementById('status-indicator').textContent = '';
+        console.log('收到WebSocket消息:', data);
 
-                // 如果有结果，显示结果
-                if (data.result) {
-                    this.chatManager.addAIMessage(data.result);
-                }
-            }
+        // 更新处理状态
+        if (data.status) {
+            this.isProcessing = data.status === 'processing' || data.status === 'thinking';
+
+            // 更新UI状态
+            document.getElementById('stop-btn').disabled = !this.isProcessing;
+            document.getElementById('send-btn').disabled = this.isProcessing;
+            
+            // 显示状态
+            this.chatManager.updateStatus(data.status);
         }
 
         // 处理思考步骤
@@ -172,36 +178,26 @@ class App {
             this.thinkingManager.addThinkingSteps(data.thinking_steps);
         }
 
+        // 处理聊天消息
+        if (data.log && data.log.length > 0) {
+            this.chatManager.addMessages(data.log);
+        }
+        
         // 处理终端输出
         if (data.terminal_output && data.terminal_output.length > 0) {
-            console.log('收到终端输出:', data.terminal_output);
+            this.handleTerminalOutput(data.terminal_output);
         }
 
-        // 处理系统日志 - 将系统日志转换为思考步骤并显示
-        if (data.system_logs && data.system_logs.length > 0) {
-            console.log('收到系统日志:', data.system_logs);
-
-            // 将系统日志转换为思考步骤格式并添加到思考时间线
-            const logSteps = data.system_logs.map(log => {
-                return {
-                    message: log,
-                    type: "system_log",
-                    details: null,
-                    timestamp: Date.now() / 1000
-                };
-            });
-
-            this.thinkingManager.addThinkingSteps(logSteps);
+        // 处理最终结果
+        if (data.result && !this.isProcessing) {
+            console.log('处理完成，结果:', data.result);
+            this.chatManager.addBotMessage(data.result);
         }
 
-        // 处理聊天日志
-        if (data.chat_logs && data.chat_logs.length > 0) {
-            console.log('收到聊天日志:', data.chat_logs);
-        }
-
-        // 如果处理完成，刷新工作区文件
-        if (data.status === 'completed') {
-            setTimeout(() => this.loadWorkspaceFiles(), 1000);
+        // 处理错误消息
+        if (data.error) {
+            console.error('WebSocket错误:', data.error);
+            this.chatManager.addErrorMessage(data.error);
         }
     }
 
@@ -261,6 +257,57 @@ class App {
         } catch (error) {
             console.error(t('load_file_error', { message: error.message }), error);
             this.chatManager.addSystemMessage(t('error_occurred', { message: error.message }));
+        }
+    }
+
+    // 初始化终端（占位符实现）
+    initTerminal() {
+        const terminalContainer = document.getElementById('terminal-container');
+        if (terminalContainer) {
+            terminalContainer.innerHTML = '<div class="terminal-placeholder">终端将在Phase2中实现</div>';
+            
+            // 添加简单样式
+            const style = document.createElement('style');
+            style.textContent = `
+                .terminal-placeholder {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    height: 100%;
+                    color: #cccccc;
+                    font-family: monospace;
+                    font-size: 14px;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+    }
+    
+    // 处理终端输出
+    handleTerminalOutput(output) {
+        if (!output || !output.length) return;
+        
+        // 将输出添加到缓冲区
+        this.terminalOutputBuffer.push(...output);
+        
+        // 在占位符中显示最新的几条输出（在Phase2中会使用xterm.js替换）
+        const terminalContainer = document.getElementById('terminal-container');
+        if (terminalContainer) {
+            let outputText = '';
+            
+            // 获取最新的10条输出
+            const recentOutput = this.terminalOutputBuffer.slice(-10);
+            for (const entry of recentOutput) {
+                outputText += `<div class="terminal-line">${entry.output}</div>`;
+            }
+            
+            terminalContainer.innerHTML = `
+                <div class="terminal-placeholder">
+                    <div class="terminal-content">
+                        ${outputText}
+                    </div>
+                </div>
+            `;
         }
     }
 }

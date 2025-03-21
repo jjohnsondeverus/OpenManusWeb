@@ -1,9 +1,14 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenManus Web</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
+    <link rel="stylesheet" href="static/connected_interface.css">
+    <link rel="icon" href="static/favicon.ico" type="image/x-icon">
     <style>
         :root {
             --primary-color: #4a6fa5;
@@ -106,18 +111,18 @@
         }
 
         .left-panel {
+            flex: 3;
+            max-width: 60%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .right-panel {
             flex: 2;
             max-width: 40%;
             display: flex;
             flex-direction: column;
             gap: 20px;
-        }
-
-        .right-panel {
-            flex: 3;
-            max-width: 60%;
-            display: flex;
-            flex-direction: column;
         }
 
         /* 思考过程部分 */
@@ -527,96 +532,139 @@
             background-color: #f8f8f8;
             border-radius: 4px;
         }
+
+        /* 终端部分 */
+        .terminal-container {
+            width: 100%;
+            height: 400px;
+            background-color: #1A1A1A;
+            border: 1px solid #333333;
+            border-radius: 4px;
+            padding: 0;
+            overflow: hidden;
+            margin-bottom: 20px;
+            font-family: monospace;
+            color: #F0F0F0;
+        }
+
+        .session-controls {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+
+        .progress-container {
+            width: 100%;
+            height: 8px;
+            background-color: #E0E0E0;
+            border-radius: 4px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background-color: var(--primary-color);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .timeline-item.active {
+            background-color: rgba(59, 130, 246, 0.1);
+            border-left: 3px solid #3B82F6;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1 data-i18n="app_title">OpenManus <span class="emoji">🐱</span></h1>
-            <p class="subtitle" data-i18n="app_subtitle">AI智能助手 - 网页版</p>
-            <div class="language-selector">
-                <select id="language-selector" aria-label="Language selector">
-                    <option value="zh-CN">中文</option>
-                    <option value="en-US">English</option>
-                </select>
-            </div>
-        </header>
-
-        <main>
-            <div class="panel-container">
-                <!-- 左侧面板 - 处理进度 -->
-                <div class="panel left-panel">
-                    <h2 data-i18n="processing_progress">处理进度</h2>
-
-                    <div class="thinking-section">
-                        <div class="section-header">
-                            <h3 data-i18n="ai_thinking_process">AI思考过程</h3>
-                            <div class="record-count" id="record-count" data-i18n="records_count">0 条记录</div>
-                        </div>
-
-                        <div class="controls">
-                            <label class="auto-scroll">
-                                <input type="checkbox" id="auto-scroll" checked>
-                                <span data-i18n="auto_scroll">自动滚动</span>
-                            </label>
-                            <button id="clear-thinking" class="btn-clear" data-i18n="clear">清空</button>
-                        </div>
-
-                        <div id="thinking-timeline" class="thinking-timeline">
-                            <!-- 思考步骤时间线将由JavaScript动态生成 -->
-                        </div>
-                    </div>
-
-                    <div class="workspace-section">
-                        <h3 data-i18n="workspace_files">工作区文件</h3>
-                        <div class="refresh-info">
-                            <span id="refresh-countdown" data-i18n="refresh_countdown">5秒后刷新</span>
-                            <button id="refresh-files" class="btn-refresh" data-i18n="refresh">刷新</button>
-                        </div>
-
-                        <div id="workspace-files" class="workspace-files">
-                            <!-- 工作区文件列表将由JavaScript动态生成 -->
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 右侧面板 - 对话 -->
-                <div class="panel right-panel">
-                    <h2 data-i18n="conversation">对话</h2>
-
-                    <div id="chat-messages" class="chat-messages">
-                        <!-- 聊天消息将由JavaScript动态生成 -->
-                    </div>
-
-                    <div class="input-area">
-                        <textarea id="user-input" placeholder="输入您的问题或指令..." data-i18n="input_placeholder"></textarea>
-                        <div class="button-group">
-                            <button id="send-btn" class="btn-send" data-i18n="send">发送</button>
-                            <button id="stop-btn" class="btn-stop" disabled data-i18n="stop">停止</button>
-                            <button id="clear-btn" class="btn-clear" data-i18n="clear">清除</button>
-                        </div>
-                        <div id="status-indicator" class="status-indicator"></div>
-                    </div>
-
-                    <!-- 文件查看器 -->
-                    <div id="file-viewer" class="file-viewer">
-                        <div class="file-viewer-header">
-                            <h3 id="file-name" data-i18n="file_name">文件名</h3>
-                            <button id="close-file-viewer" class="btn-close" data-i18n="close">×</button>
-                        </div>
-                        <pre id="file-content" class="file-content"></pre>
-                    </div>
-                </div>
-            </div>
-        </main>
-
-        <footer>
-            <p><span data-i18n="ui_made_by">Web界面制作:</span> <a href="https://space.bilibili.com/267577" target="_blank">云栖AI</a></p>
-            <p><span data-i18n="powered_by">Powered by OpenManus -</span> <a href="https://github.com/mannaandpoem/OpenManus" target="_blank">GitHub</a></p>
-        </footer>
+    <div class="header">
+        <div class="logo">
+            <img src="static/logo.svg" alt="OpenManus Logo">
+            <span>OpenManus Web</span>
+        </div>
+        <div class="header-controls">
+            <select id="language-selector" class="language-selector">
+                <option value="en">English</option>
+                <option value="zh">中文</option>
+            </select>
+        </div>
     </div>
 
-    <!-- 引入JavaScript模块 -->
-    <script type="module" src="/static/connected_interface.js"></script>
+    <div class="main-container">
+        <!-- 左侧面板：对话区域和思考过程 -->
+        <div class="left-panel">
+            <!-- 聊天消息区域 -->
+            <div class="chat-container" id="chat-container">
+                <!-- 消息内容将在这里动态添加 -->
+            </div>
+
+            <!-- 用户输入区域 -->
+            <div class="input-container">
+                <textarea id="chat-input" class="chat-input" placeholder="输入消息..." rows="1"></textarea>
+                <div class="input-buttons">
+                    <button id="send-btn" class="btn">发送</button>
+                    <button id="stop-btn" class="btn btn-secondary" disabled>停止</button>
+                    <button id="clear-btn" class="btn btn-clear">清空</button>
+                </div>
+            </div>
+
+            <!-- AI思考过程区域 -->
+            <div class="thinking-container">
+                <div class="thinking-header">
+                    <div class="thinking-title">AI思考过程</div>
+                </div>
+                <div class="thinking-timeline" id="thinking-timeline">
+                    <!-- 思考步骤将在这里动态添加 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧面板：终端输出和工作区文件 -->
+        <div class="right-panel">
+            <!-- 终端输出区域 -->
+            <div class="terminal-section">
+                <div class="section-header">
+                    <div>终端输出</div>
+                    <div class="progress-container" style="width: 100px;">
+                        <div class="progress-bar" id="progress-bar" style="width: 0%;"></div>
+                    </div>
+                </div>
+                <div class="terminal-container" id="terminal-container">
+                    <!-- 终端输出将在这里显示 -->
+                </div>
+            </div>
+
+            <!-- 工作区文件区域 -->
+            <div class="workspace-section">
+                <div class="section-header">工作区文件</div>
+                <div class="workspace-container">
+                    <div class="files-list" id="files-list">
+                        <!-- 文件列表将在这里动态添加 -->
+                    </div>
+                    <div class="file-viewer" id="file-viewer">
+                        <!-- 选中的文件内容将在这里显示 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 管理器脚本 -->
+    <script src="static/lang.js"></script>
+    <script src="static/websocket_manager.js"></script>
+    <script src="static/chat_manager.js"></script>
+    <script src="static/thinking_manager.js"></script>
+    <script src="static/workspace_manager.js"></script>
+    <script src="static/file_viewer_manager.js"></script>
+    
+    <!-- 主应用脚本 -->
+    <script src="static/connected_interface.js"></script>
+    <script>
+        // 页面加载完成后初始化应用
+        window.addEventListener('DOMContentLoaded', () => {
+            const app = new App();
+            app.init();
+        });
+    </script>
 </body>
 </html>
