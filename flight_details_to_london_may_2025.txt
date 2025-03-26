@@ -1,0 +1,7 @@
+Flight Information:
+- Airline: Norse Atlantic UK
+- Departure: 6:20 PM from JFK
+- Arrival: 6:20 AM at LGW (next day)
+- Duration: 7 hours, Nonstop
+- Price: $395 round trip
+- Emissions: 327 kg CO2e, -20% emissions

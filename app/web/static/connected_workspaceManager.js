@@ -1,247 +1,223 @@
-// connected_workspaceManager.js - Workspace and files manager
+// connected_workspaceManager.js - 处理工作区文件显示
 
 export class WorkspaceManager {
     constructor(fileClickCallback) {
+        this.workspaceContainer = document.getElementById('workspace-files');
+        this.refreshCountdownElement = document.getElementById('refresh-countdown');
+        this.fileClickCallback = fileClickCallback;
         this.workspaces = [];
-        this.workspaceContainer = null;
-        this.refreshCountdown = null;
-        this.fileClickCallback = fileClickCallback || (() => {});
         this.refreshTimer = null;
-        this.refreshInterval = 5000; // 5 seconds
+        this.countdownValue = 5;
     }
 
-    // Initialize workspace manager
+    // 初始化工作区管理器
     init() {
-        console.log('Initializing WorkspaceManager...');
-        
-        // Initialize DOM elements
-        this.workspaceContainer = document.getElementById('workspace-container');
-        this.refreshCountdown = document.getElementById('refresh-countdown');
-        
-        if (!this.workspaceContainer) {
-            console.error('Workspace container not found');
-        }
-        
-        if (!this.refreshCountdown) {
-            console.warn('Refresh countdown element not found');
-        }
-        
+        // 设置自动刷新计时器
         this.startRefreshTimer();
     }
 
-    // Update workspace data
+    // 更新工作区列表
     updateWorkspaces(workspaces) {
-        if (!Array.isArray(workspaces)) {
-            console.error('Invalid workspaces data, expected array:', workspaces);
-            return;
-        }
+        if (!Array.isArray(workspaces)) return;
 
         this.workspaces = workspaces;
         this.renderWorkspaces();
     }
 
-    // Render workspaces and files
+    // 渲染工作区列表
     renderWorkspaces() {
-        // Check if the workspace container exists
-        if (!this.workspaceContainer) {
-            console.error('Workspace container not found');
-            return;
-        }
-        
-        // Clear current content
+        // 清空容器
         this.workspaceContainer.innerHTML = '';
 
-        // Show message if no workspaces
+        // 如果没有工作区，显示提示信息
         if (this.workspaces.length === 0) {
-            const noWorkspacesMsg = document.createElement('div');
-            noWorkspacesMsg.className = 'no-workspaces';
-            noWorkspacesMsg.textContent = 'No workspace files';
-            this.workspaceContainer.appendChild(noWorkspacesMsg);
+            const emptyDiv = document.createElement('div');
+            emptyDiv.className = 'empty-workspace';
+            emptyDiv.textContent = '没有工作区文件';
+            this.workspaceContainer.appendChild(emptyDiv);
             return;
         }
 
-        // Create workspace items
+        // 渲染每个工作区
         this.workspaces.forEach(workspace => {
+            // 创建工作区项
             const workspaceItem = this.createWorkspaceItem(workspace);
             this.workspaceContainer.appendChild(workspaceItem);
+
+            // 渲染工作区下的文件
+            if (workspace.files && workspace.files.length > 0) {
+                workspace.files.forEach(file => {
+                    const fileItem = this.createFileItem(file);
+                    this.workspaceContainer.appendChild(fileItem);
+                });
+            }
         });
     }
 
-    // Create workspace item element
+    // 创建工作区项
     createWorkspaceItem(workspace) {
-        const workspaceItem = document.createElement('div');
-        workspaceItem.className = 'workspace-item';
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'workspace-item';
 
-        // Workspace title
-        const workspaceTitle = document.createElement('div');
-        workspaceTitle.className = 'workspace-title';
-        workspaceTitle.textContent = workspace.name || 'Unnamed Workspace';
-        workspaceItem.appendChild(workspaceTitle);
+        // 创建图标
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'workspace-icon';
+        iconDiv.textContent = '📁';
+        itemDiv.appendChild(iconDiv);
 
-        // File list
-        const fileList = document.createElement('div');
-        fileList.className = 'file-list';
-        
-        if (workspace.files && workspace.files.length > 0) {
-            workspace.files.forEach(file => {
-                const fileItem = this.createFileItem(file, workspace.path);
-                fileList.appendChild(fileItem);
-            });
-        } else {
-            const noFilesMsg = document.createElement('div');
-            noFilesMsg.className = 'no-files';
-            noFilesMsg.textContent = 'No files in this workspace';
-            fileList.appendChild(noFilesMsg);
-        }
-        
-        workspaceItem.appendChild(fileList);
-        return workspaceItem;
+        // 创建详情容器
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'workspace-details';
+
+        // 创建工作区名称
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'workspace-name';
+        nameDiv.textContent = workspace.name;
+        detailsDiv.appendChild(nameDiv);
+
+        // 创建修改时间
+        const dateDiv = document.createElement('div');
+        dateDiv.className = 'workspace-date';
+        dateDiv.textContent = this.formatDate(workspace.modified);
+        detailsDiv.appendChild(dateDiv);
+
+        itemDiv.appendChild(detailsDiv);
+        return itemDiv;
     }
 
-    // Create file item element
-    createFileItem(file, workspacePath) {
-        const fileItem = document.createElement('div');
-        fileItem.className = 'file-item';
-        fileItem.dataset.path = file.path || '';
-        
-        // File icon - based on file type
-        const fileIcon = document.createElement('span');
-        fileIcon.className = 'file-icon';
-        
-        // Set icon based on file extension
-        const fileExt = this.getFileExtension(file.name || '');
-        let iconClass = 'file-default';
-        
-        if (fileExt === 'py') iconClass = 'file-python';
-        else if (fileExt === 'js') iconClass = 'file-js';
-        else if (fileExt === 'html' || fileExt === 'htm') iconClass = 'file-html';
-        else if (fileExt === 'css') iconClass = 'file-css';
-        else if (fileExt === 'json') iconClass = 'file-json';
-        else if (fileExt === 'md') iconClass = 'file-markdown';
-        else if (fileExt === 'png' || fileExt === 'jpg' || fileExt === 'jpeg' || fileExt === 'gif') iconClass = 'file-image';
-        
-        fileIcon.classList.add(iconClass);
-        fileItem.appendChild(fileIcon);
-        
-        // File name
-        const fileName = document.createElement('span');
-        fileName.className = 'file-name';
-        fileName.textContent = file.name || 'Unnamed File';
-        fileItem.appendChild(fileName);
-        
-        // File info (size, modified date)
-        const fileInfo = document.createElement('div');
-        fileInfo.className = 'file-info';
-        
-        if (file.size) {
-            const fileSize = document.createElement('span');
-            fileSize.className = 'file-size';
-            fileSize.textContent = this.formatFileSize(file.size);
-            fileInfo.appendChild(fileSize);
-        }
-        
-        if (file.modified) {
-            const fileDate = document.createElement('span');
-            fileDate.className = 'file-date';
-            fileDate.textContent = this.formatDate(file.modified);
-            fileInfo.appendChild(fileDate);
-        }
-        
-        fileItem.appendChild(fileInfo);
-        
-        // Add click event
-        fileItem.addEventListener('click', () => {
-            console.log('File clicked:', file.path);
+    // 创建文件项
+    createFileItem(file) {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'file-item';
+        itemDiv.dataset.path = file.path;
+
+        // 创建图标
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'file-icon';
+        iconDiv.textContent = this.getFileIcon(file.type);
+        itemDiv.appendChild(iconDiv);
+
+        // 创建详情容器
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'file-details';
+
+        // 创建文件名称
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'file-name';
+        nameDiv.textContent = file.name;
+        detailsDiv.appendChild(nameDiv);
+
+        // 创建文件元信息
+        const metaDiv = document.createElement('div');
+        metaDiv.className = 'file-meta';
+        metaDiv.textContent = `${this.formatFileSize(file.size)} · ${this.formatDate(file.modified)}`;
+        detailsDiv.appendChild(metaDiv);
+
+        itemDiv.appendChild(detailsDiv);
+
+        // 绑定点击事件
+        itemDiv.addEventListener('click', () => {
+            // 移除其他文件的选中状态
+            document.querySelectorAll('.file-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+
+            // 添加选中状态
+            itemDiv.classList.add('selected');
+
+            // 调用回调函数
             if (this.fileClickCallback) {
                 this.fileClickCallback(file.path);
             }
         });
-        
-        return fileItem;
+
+        return itemDiv;
     }
 
-    // Format file size to human-readable format
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 B';
-        
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    // Format date to human-readable format
-    formatDate(dateString) {
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-        } catch (e) {
-            console.error('Error formatting date:', e);
-            return dateString;
+    // 获取文件图标
+    getFileIcon(fileType) {
+        switch (fileType) {
+            case 'txt':
+                return '📄';
+            case 'md':
+                return '📝';
+            case 'html':
+                return '🌐';
+            case 'css':
+                return '🎨';
+            case 'js':
+                return '📜';
+            case 'py':
+                return '🐍';
+            case 'json':
+                return '📊';
+            default:
+                return '📄';
         }
     }
 
-    // Get file extension
-    getFileExtension(filename) {
-        return filename.split('.').pop().toLowerCase();
+    // 格式化文件大小
+    formatFileSize(size) {
+        if (size < 1024) {
+            return `${size} B`;
+        } else if (size < 1024 * 1024) {
+            return `${(size / 1024).toFixed(0)} KB`;
+        } else {
+            return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+        }
     }
 
-    // Start the refresh timer
+    // 格式化日期
+    formatDate(timestamp) {
+        if (!timestamp) return '';
+
+        const date = new Date(timestamp * 1000);
+        return date.toLocaleString();
+    }
+
+    // 开始自动刷新计时器
     startRefreshTimer() {
-        let countdown = 5; // 5 seconds countdown
-        
-        // Update countdown display
-        const updateCountdown = () => {
-            if (this.refreshCountdown) {
-                this.refreshCountdown.textContent = `Refreshing in ${countdown}s`;
-            }
-            countdown--;
-            
-            if (countdown < 0) {
-                countdown = 5;
-                this.refreshWorkspaces();
-            }
-        };
-        
-        // Initial update
-        updateCountdown();
-        
-        // Set interval for countdown
-        this.refreshTimer = setInterval(updateCountdown, 1000);
-    }
-
-    // Refresh workspaces data
-    refreshWorkspaces() {
-        console.log('Refreshing workspace files...');
-        
-        fetch('/api/files')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`Error ${response.status}: ${response.statusText}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data && data.workspaces) {
-                    this.updateWorkspaces(data.workspaces);
-                }
-            })
-            .catch(error => {
-                console.error('Error refreshing workspaces:', error);
-            });
-    }
-
-    // Stop refresh timer
-    stopRefreshTimer() {
+        // 清除现有计时器
         if (this.refreshTimer) {
             clearInterval(this.refreshTimer);
-            this.refreshTimer = null;
         }
+
+        // 重置倒计时值
+        this.countdownValue = 5;
+        this.refreshCountdownElement.textContent = `${this.countdownValue}秒后刷新`;
+
+        // 设置新计时器，每1秒更新一次
+        this.refreshTimer = setInterval(() => {
+            this.countdownValue--;
+
+            if (this.countdownValue > 0) {
+                this.refreshCountdownElement.textContent = `${this.countdownValue}秒后刷新`;
+            } else {
+                this.refreshCountdownElement.textContent = '刷新中...';
+                // 触发刷新
+                this.refreshWorkspaces();
+                // 重置倒计时
+                this.countdownValue = 5;
+                this.refreshCountdownElement.textContent = `${this.countdownValue}秒后刷新`;
+            }
+        }, 1000);
     }
 
-    // Clean up resources
-    destroy() {
-        this.stopRefreshTimer();
+    // 刷新工作区文件
+    async refreshWorkspaces() {
+        try {
+            const response = await fetch('/api/files');
+            if (!response.ok) {
+                throw new Error(`API错误: ${response.status}`);
+            }
+
+            const data = await response.json();
+            this.updateWorkspaces(data.workspaces);
+
+            console.log('刷新文件列表');
+
+        } catch (error) {
+            console.error('刷新工作区文件错误:', error);
+        }
     }
 }

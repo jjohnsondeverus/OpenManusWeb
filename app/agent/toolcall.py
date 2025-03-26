@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Any, List, Literal
 
 from pydantic import Field
@@ -8,6 +9,7 @@ from app.logger import logger
 from app.prompt.toolcall import NEXT_STEP_PROMPT, SYSTEM_PROMPT
 from app.schema import AgentState, Message, ToolCall
 from app.tool import CreateChatCompletion, Terminate, ToolCollection
+from app.web.thinking_tracker import ThinkingTracker  # Import ThinkingTracker
 
 
 TOOL_CALL_REQUIRED = "Tool calls required but none provided"
@@ -34,6 +36,8 @@ class ToolCallAgent(ReActAgent):
 
     async def think(self) -> bool:
         """Process current state and decide next actions using tools"""
+        session_id = os.environ.get("OPENMANUS_TASK_ID", "")
+        
         if self.next_step_prompt:
             user_msg = Message.user_message(self.next_step_prompt)
             self.messages += [user_msg]
@@ -54,10 +58,26 @@ class ToolCallAgent(ReActAgent):
         logger.info(
             f"🛠️ {self.name} selected {len(response.tool_calls) if response.tool_calls else 0} tools to use"
         )
-        if response.tool_calls:
-            logger.info(
-                f"🧰 Tools being prepared: {[call.function.name for call in response.tool_calls]}"
+        
+        # Add thinking step for agent's thoughts
+        if session_id and response.content:
+            ThinkingTracker.add_thinking_step(
+                session_id,
+                f"{self.name}'s thoughts: {response.content[:500] + ('...' if len(response.content or '') > 500 else '')}",
+                "thinking"
             )
+        
+        if response.tool_calls:
+            tool_names = [call.function.name for call in response.tool_calls]
+            logger.info(f"🧰 Tools being prepared: {tool_names}")
+            
+            # Add thinking step for tools selection
+            if session_id:
+                ThinkingTracker.add_thinking_step(
+                    session_id,
+                    f"Selected tools: {', '.join(tool_names)}",
+                    "action"
+                )
 
         try:
             # Handle different tool_choices modes
@@ -125,6 +145,8 @@ class ToolCallAgent(ReActAgent):
 
     async def execute_tool(self, command: ToolCall) -> str:
         """Execute a single tool call with robust error handling"""
+        session_id = os.environ.get("OPENMANUS_TASK_ID", "")
+        
         if not command or not command.function or not command.function.name:
             return "Error: Invalid command format"
 
@@ -135,6 +157,15 @@ class ToolCallAgent(ReActAgent):
         try:
             # Parse arguments
             args = json.loads(command.function.arguments or "{}")
+            
+            # Add thinking step for tool execution
+            if session_id:
+                ThinkingTracker.add_thinking_step(
+                    session_id,
+                    f"Executing tool: {name}",
+                    "action",
+                    {"arguments": json.dumps(args, indent=2)}
+                )
 
             # Execute the tool
             logger.info(f"🔧 Activating tool: '{name}'...")
@@ -146,6 +177,15 @@ class ToolCallAgent(ReActAgent):
                 if result
                 else f"Cmd `{name}` completed with no output"
             )
+            
+            # Add thinking step for tool result
+            if session_id:
+                ThinkingTracker.add_thinking_step(
+                    session_id,
+                    f"Tool '{name}' completed",
+                    "result",
+                    {"result": str(result)[:500] + ('...' if len(str(result)) > 500 else '')}
+                )
 
             # Handle special tools like `finish`
             await self._handle_special_tool(name=name, result=result)

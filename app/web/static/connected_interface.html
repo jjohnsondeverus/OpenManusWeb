@@ -1,14 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OpenManus Web</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap">
-    <link rel="stylesheet" href="static/connected_interface.css">
-    <link rel="icon" href="static/favicon.ico" type="image/x-icon">
+    <title>Manus Connected Interface</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.1.0/css/xterm.css" />
+    <link rel="stylesheet" href="/static/css/timeline.css">
     <style>
         :root {
             --primary-color: #4a6fa5;
@@ -23,10 +21,8 @@
             --button-primary: #4a6fa5;
             --button-secondary: #e0e0e0;
             --button-danger: #e74c3c;
-            --terminal-bg: #1e1e1e;
+            --terminal-bg: #1a1a1a;
             --terminal-text: #f0f0f0;
-            --progress-bg: #e0e0e0;
-            --progress-fill: #4caf50;
         }
 
         * {
@@ -43,16 +39,63 @@
         }
 
         .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 20px;
+            display: flex;
+            height: 100vh;
         }
-
-        header {
-            text-align: center;
-            padding: 20px 0;
-            border-bottom: 1px solid var(--border-color);
-            position: relative;
+        
+        .left-panel {
+            flex: 1;
+            padding: 20px;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .right-panel {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .computer-panel {
+            flex: 1;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .computer-header {
+            padding: 10px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .computer-content {
+            flex: 1;
+            overflow: auto;
+            padding: 10px;
+        }
+        
+        .computer-tabs {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background: #f0f0f0;
+        }
+        
+        .computer-tab {
+            padding: 5px 15px;
+            border: none;
+            background: none;
+            cursor: pointer;
+        }
+        
+        .computer-tab.active {
+            background: white;
+            border-radius: 4px;
         }
 
         .language-selector {
@@ -104,45 +147,100 @@
         .panel-container {
             display: flex;
             gap: 20px;
-            margin-bottom: 30px;
+            height: calc(100vh - 100px); /* Full height minus header */
+            margin: 20px;
         }
 
         .panel {
             background-color: var(--panel-bg);
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            padding: 20px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         .left-panel {
-            width: 60%;
-            height: 100%;
+            flex: 1;
+            max-width: 40%;
             display: flex;
             flex-direction: column;
-            border-right: 1px solid var(--border-color);
-            overflow: hidden;
         }
 
         .right-panel {
-            width: 40%;
-            height: 100%;
+            flex: 1.5;
+            max-width: 60%;
             display: flex;
             flex-direction: column;
+        }
+
+        /* Chat Section */
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+
+        .input-area {
+            padding: 10px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .input-area textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        /* Thinking Timeline Section */
+        .thinking-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
             overflow: hidden;
         }
 
-        /* 思考过程部分 */
-        .thinking-section {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
+        .thinking-timeline {
+            flex: 1;
+            overflow-y: auto;
+            border-left: 2px solid var(--timeline-color);
+            margin: 10px 0 0 10px;
+            padding-right: 10px;
         }
 
-        .section-header {
+        /* Agent Computer Section */
+        .computer-section {
+            flex: 1;
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
+            flex-direction: column;
+            background-color: var(--terminal-bg);
+            color: var(--terminal-text);
+        }
+
+        .terminal-container {
+            flex: 1;
+            padding: 10px;
+            font-family: monospace;
+            overflow: hidden;
         }
 
         .record-count {
@@ -168,17 +266,6 @@
 
         .auto-scroll input {
             cursor: pointer;
-        }
-
-        .thinking-timeline {
-            display: flex;
-            flex-direction: column;
-            gap: 0;
-            max-height: 300px;
-            overflow-y: auto;
-            padding-right: 10px;
-            border-left: 2px solid var(--timeline-color);
-            margin-left: 10px;
         }
 
         .timeline-item {
@@ -317,19 +404,6 @@
         }
 
         /* 对话部分 */
-        .chat-messages {
-            flex: 1;
-            min-height: 300px;
-            max-height: 400px;
-            overflow-y: auto;
-            padding: 15px;
-            background-color: #f5f5f5;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: flex;
-            flex-direction: column;
-        }
-
         .message {
             margin-bottom: 15px;
             max-width: 100%;
@@ -369,42 +443,6 @@
 
         .message-content p:last-child {
             margin-bottom: 0;
-        }
-
-        .input-area {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        textarea {
-            width: 100%;
-            height: 80px;
-            padding: 12px;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            resize: none;
-            font-family: inherit;
-            font-size: 1rem;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 10px;
-        }
-
-        button {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
         }
 
         .btn-send {
@@ -538,146 +576,131 @@
             background-color: #f8f8f8;
             border-radius: 4px;
         }
-
-        /* 终端部分 */
-        .terminal-container {
-            flex: 1;
-            background-color: var(--terminal-bg);
-            color: var(--terminal-text);
-            font-family: 'JetBrains Mono', monospace;
-            padding: 0.5rem;
-            overflow: auto;
-            font-size: 0.875rem;
-            line-height: 1.4;
-        }
-
-        .session-controls {
-            padding: 0.75rem;
-            border-top: 1px solid var(--border-color);
-            background-color: var(--panel-bg);
-        }
-
-        .progress-container {
-            width: 100%;
-            height: 0.5rem;
-            background-color: var(--progress-bg);
-            border-radius: 0.25rem;
-            margin: 0.5rem 0;
-            overflow: hidden;
-        }
-
-        .progress-bar {
-            height: 100%;
-            background-color: var(--progress-fill);
-            width: 0%;
-            transition: width 0.3s ease;
-        }
-
-        .timeline-item.active {
-            background-color: rgba(59, 130, 246, 0.1);
-            border-left: 3px solid #3B82F6;
-        }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="logo">
-            <img src="static/logo.svg" alt="OpenManus Logo">
-            <span>OpenManus Web</span>
-        </div>
-        <div class="header-controls">
-            <select id="language-selector" class="language-selector">
-                <option value="en-US">English</option>
-                <option value="zh-CN">中文</option>
-            </select>
-        </div>
+    <div class="container">
+        <header>
+            <h1 data-i18n="app_title">OpenManus <span class="emoji">🐱</span></h1>
+            <p class="subtitle" data-i18n="app_subtitle">AI智能助手 - 网页版</p>
+            <div class="language-selector">
+                <select id="language-select">
+                    <option value="en">English</option>
+                    <option value="zh">中文</option>
+                </select>
+            </div>
+        </header>
+
+        <main>
+            <div class="panel-container">
+                <!-- Left Panel: Chat + Timeline -->
+                <div class="panel left-panel">
+                    <!-- Chat Section -->
+                    <div class="chat-section">
+                        <h2 data-i18n="conversation">Conversation</h2>
+                        <div id="chat-messages" class="chat-messages">
+                            <!-- Chat messages will be dynamically inserted here -->
+                        </div>
+                        <div class="input-area">
+                            <textarea id="user-input" placeholder="Ask Manus anything..." data-i18n="input_placeholder"></textarea>
+                            <div class="button-group">
+                                <button id="send-btn" class="btn-primary" data-i18n="send">Send</button>
+                                <button id="stop-btn" class="btn-danger" disabled data-i18n="stop">Stop</button>
+                                <button id="clear-btn" class="btn-secondary" data-i18n="clear">Clear</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Thinking Timeline Section -->
+                    <div class="thinking-section">
+                        <div class="section-header">
+                            <h2 data-i18n="ai_thinking_process">Agent Thoughts</h2>
+                            <div class="record-count" id="record-count" data-i18n="records_count">0 records</div>
+                        </div>
+                        <div class="controls">
+                            <label class="auto-scroll">
+                                <input type="checkbox" id="auto-scroll" checked>
+                                <span data-i18n="auto_scroll">Auto-scroll</span>
+                            </label>
+                            <button id="clear-thinking" class="btn-secondary" data-i18n="clear">Clear</button>
+                        </div>
+                        <div id="thinking-timeline" class="thinking-timeline">
+                            <!-- Timeline items will be dynamically inserted here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Panel: Agent's Computer -->
+                <div class="panel right-panel">
+                    <div class="computer-panel">
+                        <div class="computer-header">
+                            <h3>Manus's Computer</h3>
+                        </div>
+                        <div class="computer-tabs">
+                            <button class="computer-tab active" data-tab="terminal">Terminal</button>
+                            <button class="computer-tab" data-tab="browser">Browser</button>
+                            <button class="computer-tab" data-tab="editor">Editor</button>
+                            <button class="computer-tab" data-tab="search">Search</button>
+                        </div>
+                        <div class="computer-content">
+                            <div id="terminal-container" class="computer-container" style="display: block; height: 100%;"></div>
+                            <div id="browser-container" class="computer-container" style="display: none; height: 100%;"></div>
+                            <div id="editor-container" class="computer-container" style="display: none; height: 100%;"></div>
+                            <div id="search-container" class="computer-container" style="display: none; height: 100%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p><span data-i18n="ui_made_by">Web界面制作:</span> <a href="https://space.bilibili.com/267577" target="_blank">云栖AI</a></p>
+            <p><span data-i18n="powered_by">Powered by OpenManus -</span> <a href="https://github.com/mannaandpoem/OpenManus" target="_blank">GitHub</a></p>
+        </footer>
     </div>
 
-    <div class="main-container">
-        <!-- 左侧面板：对话区域和思考过程 -->
-        <div class="left-panel">
-            <!-- 聊天消息区域 -->
-            <div class="chat-container" id="chat-container">
-                <!-- 消息内容将在这里动态添加 -->
-            </div>
+    <!-- Third party dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.1.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.7.0/lib/xterm-addon-fit.js"></script>
+    
+    <!-- Application scripts -->
+    <script type="module">
+        // Import all required modules
+        import { I18N } from '/static/i18n.js';
+        import { WebSocketManager } from '/static/connected_websocketManager.js';
+        import { ChatManager } from '/static/connected_chatManager.js';
+        import { ThinkingManager } from '/static/connected_thinkingManager.js';
+        import { FileViewerManager } from '/static/connected_fileViewerManager.js';
+        import { App } from '/static/connected_interface.js';
+        
+        // Wait for DOM to be ready
+        async function initializeApp() {
+            try {
+                // Initialize I18N first
+                const i18n = new I18N();
+                await i18n.init();
+                window.i18n = i18n;
+                
+                // Make classes available globally
+                window.WebSocketManager = WebSocketManager;
+                window.ChatManager = ChatManager;
+                window.ThinkingManager = ThinkingManager;
+                window.FileViewerManager = FileViewerManager;
+                
+                // Initialize app
+                window.app = new App();
+                await window.app.init();
+            } catch (error) {
+                console.error('Failed to initialize application:', error);
+            }
+        }
 
-            <!-- 用户输入区域 -->
-            <div class="input-container">
-                <textarea id="chat-input" class="chat-input" placeholder="Enter your message..." rows="1"></textarea>
-                <div class="input-buttons">
-                    <button id="send-btn" class="btn">Send</button>
-                    <button id="stop-btn" class="btn btn-secondary" disabled>Stop</button>
-                    <button id="clear-btn" class="btn btn-clear">Clear</button>
-                </div>
-            </div>
-
-            <!-- Status indicator -->
-            <div id="status-indicator" class="status-indicator"></div>
-
-            <!-- AI思考过程区域 -->
-            <div class="thinking-container" id="thinking-container">
-                <div class="thinking-header">
-                    <div class="thinking-title">AI Thinking Process</div>
-                    <div class="record-count">Records: <span id="record-count">0</span></div>
-                    <button id="clear-thinking" class="btn btn-clear btn-sm">Clear</button>
-                </div>
-                <div class="thinking-controls">
-                    <div class="auto-scroll">
-                        <input type="checkbox" id="auto-scroll" checked>
-                        <label for="auto-scroll">Auto-scroll</label>
-                    </div>
-                </div>
-                <div id="timeline-container" class="timeline-container">
-                    <div class="thinking-timeline" id="thinking-timeline">
-                        <!-- 思考步骤将在这里动态添加 -->
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 右侧面板：终端输出和工作区文件 -->
-        <div class="right-panel">
-            <!-- 终端输出区域 -->
-            <div class="terminal-section">
-                <div class="section-header">
-                    <div>Terminal Output</div>
-                    <div class="progress-container" style="width: 100px;">
-                        <div class="progress-bar" id="progress-bar" style="width: 0%;"></div>
-                    </div>
-                </div>
-                <div class="terminal-container">
-                    <div id="terminal-output" class="terminal-output">
-                        <!-- 终端输出将在这里显示 -->
-                    </div>
-                </div>
-            </div>
-
-            <!-- 工作区文件区域 -->
-            <div class="workspace-section">
-                <div class="section-header">
-                    <div>Workspace Files</div>
-                    <button id="refresh-files" class="btn btn-clear btn-sm">Refresh</button>
-                </div>
-                <div id="refresh-countdown" class="refresh-countdown">Refreshing in 5s</div>
-                <div id="workspace-container" class="workspace-container">
-                    <div class="files-list" id="files-list">
-                        <!-- 文件列表将在这里动态添加 -->
-                    </div>
-                </div>
-                <div class="file-viewer" id="file-viewer">
-                    <div class="file-viewer-header">
-                        <h3 id="file-name">File Name</h3>
-                        <button id="close-file-viewer" class="btn-close">&times;</button>
-                    </div>
-                    <div id="file-content" class="file-content">
-                        <!-- 文件内容将在这里显示 -->
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 管理器脚本 -->
-    <script type="module" src="static/connected_interface.js"></script>
+        // Start initialization when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeApp);
+        } else {
+            initializeApp();
+        }
+    </script>
 </body>
 </html>

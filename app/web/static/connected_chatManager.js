@@ -1,152 +1,114 @@
-// connected_chatManager.js - Handles chat interface and messages
+// connected_chatManager.js - 处理聊天界面和消息
 
 export class ChatManager {
-    constructor(sendMessageCallback) {
-        this.chatContainer = document.getElementById('chat-container');
-        this.userInput = document.getElementById('chat-input');
+    constructor() {
+        this.messageContainer = document.getElementById('chat-messages');
+        this.userInput = document.getElementById('user-input');
         this.sendButton = document.getElementById('send-btn');
-        this.sendMessageCallback = sendMessageCallback;
+        this.stopButton = document.getElementById('stop-btn');
+        this.clearButton = document.getElementById('clear-btn');
+        
+        // Initialize message container
+        this.initMessageContainer();
     }
 
-    // Initialize chat manager
-    init() {
-        // Bind send button click event
-        this.sendButton.addEventListener('click', () => {
-            this.sendMessage();
-        });
-
-        // Bind enter key event to input box
-        this.userInput.addEventListener('keypress', (event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                this.sendMessage();
-            }
-        });
-
-        // Auto-adjust input box height
-        this.userInput.addEventListener('input', () => {
-            this.adjustTextareaHeight();
-        });
+    initMessageContainer() {
+        // Clear any existing messages
+        this.messageContainer.innerHTML = '';
+        
+        // Add welcome message
+        this.addSystemMessage('Welcome to Manus AI! How can I help you today?');
     }
 
-    // Send message
-    sendMessage() {
-        const message = this.userInput.value.trim();
-        if (!message) return;
-
-        // Call callback function to send message
-        if (this.sendMessageCallback) {
-            this.sendMessageCallback(message);
-        }
-
-        // Clear input box
-        this.userInput.value = '';
-        this.adjustTextareaHeight();
-    }
-
-    // Add user message
     addUserMessage(message) {
-        const messageElement = this.createMessageElement('user-message', message);
-        this.chatContainer.appendChild(messageElement);
-        this.scrollToBottom();
-    }
-
-    // Add AI message
-    addAIMessage(message) {
-        const messageElement = this.createMessageElement('ai-message', message);
-        this.chatContainer.appendChild(messageElement);
-        this.scrollToBottom();
-    }
-
-    // Add system message
-    addSystemMessage(message) {
-        const messageElement = this.createMessageElement('system-message', message);
-        this.chatContainer.appendChild(messageElement);
-        this.scrollToBottom();
-    }
-
-    // Create message element
-    createMessageElement(className, content) {
         const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${className}`;
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-
-        // Process Markdown format
-        const formattedContent = this.formatMessage(content);
-        contentDiv.innerHTML = formattedContent;
-
-        messageDiv.appendChild(contentDiv);
-        return messageDiv;
+        messageDiv.className = 'message user-message';
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'message-avatar';
+        avatar.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+        
+        const content = document.createElement('div');
+        content.className = 'message-content';
+        content.textContent = message;
+        
+        messageDiv.appendChild(avatar);
+        messageDiv.appendChild(content);
+        this.messageContainer.appendChild(messageDiv);
+        
+        this.scrollToBottom();
     }
 
-    // Format message content (handle simple Markdown)
-    formatMessage(content) {
-        if (!content) return '';
-
-        // Escape HTML special characters
-        let formatted = content
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-
-        // Handle code blocks
-        formatted = formatted.replace(/\`\`\`([^\`]+)\`\`\`/g, '<pre><code>$1</code></pre>');
-
-        // Handle inline code
-        formatted = formatted.replace(/\`([^\`]+)\`/g, '<code>$1</code>');
-
-        // Handle bold text
-        formatted = formatted.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
-
-        // Handle italic text
-        formatted = formatted.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
-
-        // Handle line breaks
-        formatted = formatted.replace(/\n/g, '<br>');
-
-        return formatted;
+    addAssistantMessage(message) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant-message';
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'message-avatar';
+        avatar.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>';
+        
+        const content = document.createElement('div');
+        content.className = 'message-content';
+        content.innerHTML = this.formatMessage(message);
+        
+        messageDiv.appendChild(avatar);
+        messageDiv.appendChild(content);
+        this.messageContainer.appendChild(messageDiv);
+        
+        this.scrollToBottom();
     }
 
-    // Clear all messages
-    clearMessages() {
-        this.chatContainer.innerHTML = '';
+    addSystemMessage(message) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message system-message';
+        
+        const content = document.createElement('div');
+        content.className = 'message-content';
+        content.textContent = message;
+        
+        messageDiv.appendChild(content);
+        this.messageContainer.appendChild(messageDiv);
+        
+        this.scrollToBottom();
     }
 
-    // Scroll to bottom
+    formatMessage(message) {
+        // Convert markdown-style code blocks
+        message = message.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+            const language = lang || '';
+            return `<pre><code class="language-${language}">${this.escapeHtml(code.trim())}</code></pre>`;
+        });
+
+        // Convert inline code
+        message = message.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+        // Convert links
+        message = message.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+        // Convert bold text
+        message = message.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+        // Convert italic text
+        message = message.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+        // Convert line breaks
+        message = message.replace(/\n/g, '<br>');
+
+        return message;
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
     scrollToBottom() {
-        this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+        this.messageContainer.scrollTop = this.messageContainer.scrollHeight;
     }
 
-    // Adjust textarea height
-    adjustTextareaHeight() {
-        this.userInput.style.height = 'auto';
-        this.userInput.style.height = (this.userInput.scrollHeight) + 'px';
-    }
-    
-    // Update status indicator
-    updateStatus(status) {
-        // Find or create status indicator
-        let statusIndicator = document.getElementById('status-indicator');
-        if (!statusIndicator) {
-            statusIndicator = document.createElement('div');
-            statusIndicator.id = 'status-indicator';
-            statusIndicator.className = 'status-indicator';
-            document.querySelector('main').appendChild(statusIndicator);
-        }
-        
-        // Update status text and class
-        statusIndicator.textContent = status;
-        
-        // Update class based on status
-        statusIndicator.className = 'status-indicator';
-        if (status === 'connected') {
-            statusIndicator.classList.add('connected');
-        } else if (status === 'disconnected') {
-            statusIndicator.classList.add('disconnected');
-        } else if (status === 'connecting') {
-            statusIndicator.classList.add('connecting');
-        }
+    clearMessages() {
+        this.messageContainer.innerHTML = '';
+        this.addSystemMessage('Chat cleared.');
     }
 }

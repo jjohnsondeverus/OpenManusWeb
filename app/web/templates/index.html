@@ -51,7 +51,7 @@
                     <div id="chat-messages" class="chat-messages"></div>
 
                     <div class="input-area">
-                        <textarea id="chat-input" placeholder="输入您的问题或指令..." rows="3"></textarea>
+                        <textarea id="user-input" placeholder="输入您的问题或指令..." rows="3"></textarea>
                         <div class="button-area">
                             <button id="send-btn" class="primary-btn">发送</button>
                             <button id="stop-btn" class="stop-btn">停止</button>
@@ -62,10 +62,10 @@
                     <!-- 添加文件内容查看器 -->
                     <div id="file-viewer" class="file-viewer">
                         <div class="file-viewer-header">
-                            <div id="file-name">File Content</div>
-                            <button id="close-file-viewer" class="close-btn">&times;</button>
+                            <h3 id="file-viewer-title">文件内容</h3>
+                            <button id="close-file-viewer" class="close-btn">×</button>
                         </div>
-                        <div id="file-content" class="file-content"></div>
+                        <pre id="file-content" class="file-content"></pre>
                     </div>
                 </div>
             </div>

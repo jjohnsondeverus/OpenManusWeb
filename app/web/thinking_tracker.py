@@ -7,6 +7,9 @@ import threading
 import time
 from enum import Enum
 from typing import Any, Dict, List, Optional
+import re
+
+from app.web.session_storage import SessionStorage
 
 
 # 全局思考步骤存储
@@ -16,15 +19,24 @@ class ThinkingStep:
     def __init__(
         self, message: str, step_type: str = "thinking", details: Optional[str] = None
     ):
+        self.id = f"step_{int(time.time())}_{id(self)}"
         self.message = message
         self.step_type = step_type  # thinking, conclusion, error, communication
         self.details = details  # 用于存储通信内容或详细信息
         self.timestamp = time.time()
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert step to dictionary."""
+        return {
+            "id": self.id,
+            "message": self.message,
+            "type": self.step_type,
+            "details": self.details,
+            "timestamp": self.timestamp
+        }
 
-class TaskStatus(Enum):
-    """任务状态枚举"""
 
+class TaskStatus(str, Enum):
     PENDING = "pending"
     THINKING = "thinking"
     COMPLETED = "completed"
@@ -41,8 +53,8 @@ class ThinkingTracker:
     _session_progress: Dict[str, Dict[str, Any]] = {}  # 存储进度信息
     _session_logs: Dict[str, List[Dict]] = {}  # 存储日志内容
     _ws_send_callbacks: Dict[str, Any] = {}  # 存储WebSocket发送回调函数
-    _terminal_outputs: Dict[str, List[Dict]] = {}  # 存储终端输出
     _lock = threading.Lock()
+    _storage = SessionStorage()  # Initialize database storage
 
     @classmethod
     def register_ws_send_callback(cls, session_id: str, callback: Any) -> None:
@@ -58,7 +70,7 @@ class ThinkingTracker:
                 del cls._ws_send_callbacks[session_id]
 
     @classmethod
-    def start_tracking(cls, session_id: str) -> None:
+    def start_tracking(cls, session_id: str, prompt: Optional[str] = None) -> None:
         """开始追踪一个会话的思考过程"""
         with cls._lock:
             cls._session_steps[session_id] = []
@@ -69,43 +81,130 @@ class ThinkingTracker:
                 "completed_steps": 0,
                 "percentage": 0,
             }
+            cls._session_logs[session_id] = []
+
+            # Save initial session to database
+            if prompt:
+                cls._storage.save_session(
+                    session_id=session_id,
+                    prompt=prompt,
+                    status=TaskStatus.THINKING.value
+                )
 
     @classmethod
     def add_thinking_step(
-        cls, session_id: str, message: str, details: Optional[str] = None
+        cls, session_id: str, message: str, step_type: str = "thinking", details: dict = None
     ) -> None:
-        """添加一个思考步骤"""
-        step = ThinkingStep(message, "thinking", details)
+        """Add a thinking step to the session."""
+        print(f"Adding thinking step to session {session_id}: {message}")
+        
+        if session_id not in cls._session_steps:
+            print(f"Starting tracking for session {session_id} (it wasn't tracked before)")
+            cls.start_tracking(session_id)
+            
+        # Check for duplicates to avoid redundant steps
+        step_id = None
+        if details and isinstance(details, dict) and 'step_id' in details:
+            step_id = details['step_id']
+            print(f"Step has ID: {step_id}")
+            
+            # Only try to find existing steps if we have a step_id
+            if step_id:
+                with cls._lock:
+                    # Find and update existing step instead of adding a new one
+                    existing_step_index = None
+                    for i, step in enumerate(cls._session_steps[session_id]):
+                        if (hasattr(step, 'details') and step.details and 
+                            isinstance(step.details, dict) and 
+                            'step_id' in step.details and 
+                            step.details['step_id'] == step_id):
+                            
+                            existing_step_index = i
+                            print(f"Found existing step with ID {step_id} at index {i}")
+                            break
+                    
+                    if existing_step_index is not None:
+                        # Update existing step instead of adding a new one
+                        existing_step = cls._session_steps[session_id][existing_step_index]
+                        existing_step.message = message
+                        existing_step.details = details
+                        existing_step.timestamp = time.time()  # Update timestamp
+                        
+                        print(f"Updated existing step with ID {step_id} instead of adding a new one")
+                        
+                        # Send update via WebSocket if callback registered
+                        if session_id in cls._ws_send_callbacks:
+                            try:
+                                message_data = {
+                                    "status": cls.get_status(session_id),
+                                    "thinking_steps": [existing_step.to_dict()],
+                                    "progress": cls.get_progress(session_id),
+                                    "logs": cls.get_logs(session_id),
+                                    "updated": True  # Flag to indicate this is an update
+                                }
+                                print(f"Sending incremental update for existing step via WebSocket")
+                                asyncio.create_task(cls._ws_send_callbacks[session_id](json.dumps(message_data)))
+                            except Exception as e:
+                                print(f"Error sending WebSocket update: {str(e)}")
+                        
+                        return
+        
+        # If we reach here, it's a new step or doesn't have a step_id for deduplication
+        print(f"Creating new step for message: {message[:50]}...")
+        step = ThinkingStep(message, step_type, details)
+        
+        # Add step to the in-memory storage
         with cls._lock:
-            if session_id in cls._session_steps:
-                cls._session_steps[session_id].append(step)
-
-                # 更新进度信息
-                if session_id in cls._session_progress:
-                    progress = cls._session_progress[session_id]
-                    progress["current_step"] = message
-
-                    # Attempt to extract step number and total steps from the message
-                    import re
-
-                    match = re.search(r"Executing step (\d+)/(\d+)", message)
-                    if match:
-                        current_step_num = int(match.group(1))
-                        total_steps = int(match.group(2))
-                        progress["total_steps"] = total_steps
-                        progress["completed_steps"] = (
-                            current_step_num - 1
-                        )  # Mark previous as complete
-
-                    if progress["total_steps"] > 0:
-                        progress["percentage"] = min(
-                            int(
-                                100
-                                * progress["completed_steps"]
-                                / progress["total_steps"]
-                            ),
-                            99,
-                        )
+            if session_id not in cls._session_steps:
+                cls._session_steps[session_id] = []
+                
+            cls._session_steps[session_id].append(step)
+            print(f"Session {session_id} now has {len(cls._session_steps[session_id])} thinking steps")
+            
+            # Save to database
+            try:
+                cls._storage.save_thinking_steps(session_id, [
+                    {
+                        "message": step.message,
+                        "type": step.step_type,
+                        "details": step.details,
+                        "timestamp": step.timestamp
+                    }
+                ])
+            except Exception as e:
+                print(f"Error saving thinking step to database: {str(e)}")
+            
+            # Try to extract step numbers from message for progress
+            try:
+                match = re.search(r'Step (\d+)/(\d+):', message)
+                if match:
+                    current_step = int(match.group(1))
+                    total_steps = int(match.group(2))
+                    progress = (current_step / total_steps) * 100
+                    cls._session_progress[session_id] = progress
+            except Exception as e:
+                print(f"Error updating progress: {str(e)}")
+            
+            # Send update via WebSocket if callback registered
+            if session_id in cls._ws_send_callbacks:
+                try:
+                    # Only send the new step, not all steps
+                    # This prevents duplicate data and reduces network traffic
+                    message_data = {
+                        "status": cls.get_status(session_id),
+                        "thinking_steps": [step.to_dict()],  # Just send the latest step
+                        "progress": cls.get_progress(session_id),
+                        "logs": cls.get_logs(session_id),
+                        "updated": False  # Flag to indicate this is a new step
+                    }
+                    
+                    # Log the message type for debugging
+                    print(f"Sending incremental update with latest step via WebSocket")
+                    
+                    # Send the message
+                    asyncio.create_task(cls._ws_send_callbacks[session_id](json.dumps(message_data)))
+                except Exception as e:
+                    print(f"Error sending WebSocket update: {str(e)}")
 
     @classmethod
     def add_communication(cls, session_id: str, direction: str, content: str) -> None:
@@ -121,6 +220,24 @@ class ThinkingTracker:
         with cls._lock:
             if session_id in cls._session_steps:
                 cls._session_steps[session_id].append(step)
+                
+                # Save step to database
+                cls._storage.save_thinking_steps(session_id, [step.to_dict()])
+
+                # Send update through WebSocket if callback is registered
+                if session_id in cls._ws_send_callbacks:
+                    try:
+                        callback = cls._ws_send_callbacks[session_id]
+                        # Only send the new communication step
+                        asyncio.create_task(callback(json.dumps({
+                            "status": cls.get_status(session_id),
+                            "thinking_steps": [step.to_dict()],  # Just send the latest step
+                            "progress": cls.get_progress(session_id),
+                            "logs": cls.get_logs(session_id)
+                        })))
+                        print(f"Sending incremental update with communication step via WebSocket")
+                    except Exception as e:
+                        print(f"Error sending WebSocket update: {str(e)}")
 
     @classmethod
     def update_progress(
@@ -163,6 +280,29 @@ class ThinkingTracker:
                     progress["percentage"] = 100
                     progress["current_step"] = "已完成"
 
+                # Save conclusion to database
+                cls._storage.save_thinking_steps(session_id, [step.to_dict()])
+                cls._storage.save_session(
+                    session_id=session_id,
+                    prompt="",  # We don't have access to the original prompt here
+                    status=TaskStatus.COMPLETED.value
+                )
+
+                # Send update through WebSocket if callback is registered
+                if session_id in cls._ws_send_callbacks:
+                    try:
+                        callback = cls._ws_send_callbacks[session_id]
+                        # Only send the conclusion step
+                        asyncio.create_task(callback(json.dumps({
+                            "status": cls.get_status(session_id),
+                            "thinking_steps": [step.to_dict()],  # Just send the conclusion
+                            "progress": cls.get_progress(session_id),
+                            "logs": cls.get_logs(session_id)
+                        })))
+                        print(f"Sending incremental update with conclusion step via WebSocket")
+                    except Exception as e:
+                        print(f"Error sending WebSocket update: {str(e)}")
+
     @classmethod
     def add_error(cls, session_id: str, message: str) -> None:
         """添加一个错误信息"""
@@ -172,30 +312,38 @@ class ThinkingTracker:
                 cls._session_steps[session_id].append(step)
                 cls._session_status[session_id] = TaskStatus.ERROR
 
+                # Save error to database
+                cls._storage.save_thinking_steps(session_id, [step.to_dict()])
+                cls._storage.save_session(
+                    session_id=session_id,
+                    prompt="",  # We don't have access to the original prompt here
+                    status=TaskStatus.ERROR.value
+                )
+
     @classmethod
     def mark_stopped(cls, session_id: str) -> None:
         """标记任务已停止"""
         with cls._lock:
             if session_id in cls._session_status:
                 cls._session_status[session_id] = TaskStatus.STOPPED
+                # Update status in database
+                cls._storage.save_session(
+                    session_id=session_id,
+                    prompt="",  # We don't have access to the original prompt here
+                    status=TaskStatus.STOPPED.value
+                )
 
     @classmethod
     def get_thinking_steps(cls, session_id: str, start_index: int = 0) -> List[Dict]:
         """获取指定会话的思考步骤"""
         with cls._lock:
             if session_id not in cls._session_steps:
-                return []
+                # Try to load from database
+                session_data = cls._storage.get_session_data(session_id)
+                return session_data.get("thinking_steps", [])
 
             steps = cls._session_steps[session_id][start_index:]
-            return [
-                {
-                    "message": step.message,
-                    "type": step.step_type,
-                    "details": step.details,
-                    "timestamp": step.timestamp,
-                }
-                for step in steps
-            ]
+            return [step.to_dict() for step in steps]
 
     @classmethod
     def get_progress(cls, session_id: str) -> Dict[str, Any]:
@@ -219,76 +367,6 @@ class ThinkingTracker:
             return cls._session_status[session_id].value
 
     @classmethod
-    def add_terminal_output(cls, session_id: str, output: str, 
-                           thinking_step_id: Optional[str] = None, 
-                           tool_name: Optional[str] = None) -> None:
-        """添加终端输出记录
-
-        Args:
-            session_id: 会话ID
-            output: 终端输出内容
-            thinking_step_id: 关联的思考步骤ID（可选）
-            tool_name: 工具名称（可选）
-        """
-        with cls._lock:
-            if session_id not in cls._terminal_outputs:
-                cls._terminal_outputs[session_id] = []
-            
-            # 创建输出条目，带有时间戳和元数据
-            terminal_entry = {
-                "output": output,
-                "timestamp": time.time(),
-                "thinking_step_id": thinking_step_id,
-                "tool_name": tool_name
-            }
-            
-            cls._terminal_outputs[session_id].append(terminal_entry)
-            
-            # 如果存在WebSocket回调，则通知客户端有新的终端输出
-            cls._notify_ws_terminal_update(session_id, terminal_entry)
-
-    @classmethod
-    def _notify_ws_terminal_update(cls, session_id: str, terminal_entry: Dict) -> None:
-        """通知WebSocket客户端有新的终端输出"""
-        with cls._lock:
-            if session_id in cls._ws_send_callbacks:
-                callback = cls._ws_send_callbacks[session_id]
-                try:
-                    # 使用asyncio.create_task确保非阻塞
-                    asyncio.create_task(
-                        callback(
-                            json.dumps({
-                                "status": cls.get_status(session_id),
-                                "terminal_output": [terminal_entry]
-                            })
-                        )
-                    )
-                except Exception as e:
-                    print(f"WebSocket发送回调失败: {str(e)}")
-
-    @classmethod
-    def get_terminal_output(cls, session_id: str, start_index: int = 0) -> List[Dict]:
-        """获取指定会话的终端输出"""
-        with cls._lock:
-            if session_id not in cls._terminal_outputs:
-                return []
-            
-            return cls._terminal_outputs[session_id][start_index:]
-
-    @classmethod
-    def get_terminal_output_for_step(cls, session_id: str, 
-                                    thinking_step_id: str) -> List[Dict]:
-        """获取与特定思考步骤关联的终端输出"""
-        with cls._lock:
-            if session_id not in cls._terminal_outputs:
-                return []
-            
-            return [
-                entry for entry in cls._terminal_outputs[session_id]
-                if entry.get("thinking_step_id") == thinking_step_id
-            ]
-
-    @classmethod
     def clear_session(cls, session_id: str) -> None:
         """清除指定会话的记录"""
         with cls._lock:
@@ -300,94 +378,23 @@ class ThinkingTracker:
                 del cls._session_progress[session_id]
             if session_id in cls._session_logs:
                 del cls._session_logs[session_id]
-            # 添加终端输出清理
-            if session_id in cls._terminal_outputs:
-                del cls._terminal_outputs[session_id]
 
     @classmethod
     def add_log_entry(cls, session_id: str, entry: Dict) -> None:
-        """添加一个日志条目"""
+        """添加一条日志条目"""
         with cls._lock:
             if session_id not in cls._session_logs:
                 cls._session_logs[session_id] = []
 
-            # 确保日志条目有必要的字段
+            # Add timestamp if not present
             if "timestamp" not in entry:
                 entry["timestamp"] = time.time()
 
             cls._session_logs[session_id].append(entry)
 
-            # 根据日志级别自动添加对应的思考步骤，更详细地处理日志内容
-            msg = entry.get("message", "")
-            if entry.get("level") == "INFO":
-                # 针对特定类型的日志内容生成更有意义的思考步骤
-                if "开始执行" in msg:
-                    cls.add_thinking_step(
-                        session_id, f"开始执行任务: {msg.replace('开始执行: ', '')}"
-                    )
-                elif "执行步骤" in msg or "步骤" in msg:
-                    # 尝试提取步骤信息
-                    cls.add_thinking_step(session_id, f"执行: {msg}")
-                elif "完成" in msg or "成功" in msg:
-                    cls.add_thinking_step(session_id, f"完成: {msg}")
-                else:
-                    cls.add_thinking_step(session_id, f"信息: {msg}")
-            elif entry.get("level") == "ERROR":
-                cls.add_error(session_id, f"错误: {msg}")
-            elif entry.get("level") == "WARNING":
-                cls.add_thinking_step(session_id, f"警告: {msg}", "warning")
-
-            # 识别进度信息并更新
-            cls._update_progress_from_log(session_id, msg)
-
-        # 添加日志后立即通知 WebSocket 客户端
-        cls._notify_ws_log_update(session_id, entry)
-
-    @classmethod
-    def _notify_ws_log_update(cls, session_id: str, log_entry: Dict):
-        """通知 WebSocket 客户端有新的日志条目"""
-        with cls._lock:
-            if session_id in cls._ws_send_callbacks:
-                callback = cls._ws_send_callbacks[session_id]
-                try:
-                    # 使用 asyncio.create_task 确保非阻塞
-                    asyncio.create_task(
-                        callback(
-                            json.dumps(
-                                {
-                                    "status": cls.get_status(session_id),
-                                    "logs": [log_entry],
-                                }
-                            )
-                        )
-                    )
-                except Exception as e:
-                    print(f"WebSocket 发送回调失败: {str(e)}")
-
-    @classmethod
-    def _update_progress_from_log(cls, session_id: str, message: str):
-        """从日志消息中提取进度信息并更新"""
-        import re
-
-        # 尝试从日志中提取步骤信息
-        step_match = re.search(r"步骤 (\d+)/(\d+)", message) or re.search(
-            r"Step (\d+)/(\d+)", message
-        )
-        if step_match and session_id in cls._session_progress:
-            current_step = int(step_match.group(1))
-            total_steps = int(step_match.group(2))
-            progress = cls._session_progress[session_id]
-
-            progress["current_step"] = message
-            progress["total_steps"] = total_steps
-            progress["completed_steps"] = current_step - 1
-
-            # 重新计算百分比
-            if total_steps > 0:
-                progress["percentage"] = min(
-                    int(100 * progress["completed_steps"] / total_steps),
-                    99,  # 最多到99%，完成时才到100%
-                )
+            # Save terminal output to database if it's a terminal output
+            if "output" in entry:
+                cls._storage.save_terminal_outputs(session_id, [entry])
 
     @classmethod
     def add_log_entries(cls, session_id: str, entries: List[Dict]) -> None:

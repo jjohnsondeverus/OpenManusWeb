@@ -1,0 +1,15 @@
+1. Milk
+2. Bread
+3. Eggs
+4. Butter
+5. Cheese
+6. Chicken
+7. Rice
+8. Pasta
+9. Vegetables (e.g., carrots, broccoli, spinach)
+10. Fruits (e.g., apples, bananas, oranges)
+11. Cereal
+12. Coffee/Tea
+13. Sugar
+14. Flour
+15. Cooking oil

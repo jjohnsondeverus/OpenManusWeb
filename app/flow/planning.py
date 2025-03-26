@@ -12,6 +12,7 @@ from app.llm import LLM
 from app.logger import logger
 from app.schema import AgentState, Message
 from app.tool import PlanningTool
+from app.web.thinking_tracker import ThinkingTracker  # Import ThinkingTracker
 
 
 class PlanningFlow(BaseFlow):
@@ -67,49 +68,88 @@ class PlanningFlow(BaseFlow):
         self, input_text: str, job_id: str = None, cancel_event: asyncio.Event = None
     ) -> str:
         """Execute the planning flow with agents."""
+        session_id = job_id or self.active_plan_id
         try:
             if not self.primary_agent:
                 raise ValueError("No primary agent available")
 
+            # Add initial thinking step for the whole execution
+            ThinkingTracker.add_thinking_step(
+                session_id, 
+                f"Beginning execution of plan for: {input_text[:100]}{'...' if len(input_text) > 100 else ''}",
+                "thinking"
+            )
+
             # Create initial plan if input provided
             if input_text:
-                await self._create_initial_plan(input_text, job_id)
-
-                # Verify plan was created successfully
-                if self.active_plan_id not in self.planning_tool.plans:
-                    logger.error(
-                        f"Plan creation failed. Plan ID {self.active_plan_id} not found in planning tool."
-                    )
-                    return f"Failed to create plan for: {input_text}"
+                try:
+                    print("Before calling _create_initial_plan")
+                    await self._create_initial_plan(input_text, job_id)
+                    print(f"After _create_initial_plan - plan ID: {self.active_plan_id}")
+                    
+                    # Verify plan was created successfully
+                    if self.active_plan_id in self.planning_tool.plans:
+                        print(f"Plan verified in planning_tool.plans")
+                        # Debug the actual plan object
+                        plan_data = self.planning_tool.plans[self.active_plan_id]
+                        print(f"Plan steps count: {len(plan_data.get('steps', []))}")
+                    else:
+                        logger.error(
+                            f"Plan creation failed. Plan ID {self.active_plan_id} not found in planning tool."
+                        )
+                        return f"Failed to create plan for: {input_text}"
+                except Exception as e:
+                    print(f"Exception in plan creation: {str(e)}")
+                    logger.error(f"Exception in plan creation: {str(e)}")
+                    raise
 
             result = ""
-            while True:
-                # 检查是否被要求取消执行
-                if cancel_event and cancel_event.is_set():
-                    logger.warning("Execution cancelled by user")
-                    return result + "\n执行已被用户取消"
+            try:
+                print(f"Starting plan execution loop for {self.active_plan_id}")
+                loop_iterations = 0
+                while True:
+                    loop_iterations += 1
+                    print(f"Plan execution loop iteration {loop_iterations}")
+                    
+                    # 检查是否被要求取消执行
+                    if cancel_event and cancel_event.is_set():
+                        logger.warning("Execution cancelled by user")
+                        return result + "\n执行已被用户取消"
 
-                # Get current step to execute
-                self.current_step_index, step_info = await self._get_current_step_info()
+                    # Get current step to execute
+                    print("Getting current step info...")
+                    self.current_step_index, step_info = await self._get_current_step_info()
+                    print(f"Current step index: {self.current_step_index}, Step info: {step_info}")
 
-                # Exit if no more steps or plan completed
-                if self.current_step_index is None:
-                    result += await self._finalize_plan()
-                    break
+                    # Exit if no more steps or plan completed
+                    if self.current_step_index is None:
+                        print("No more steps to execute, finalizing plan")
+                        result += await self._finalize_plan()
+                        break
 
-                # Execute current step with appropriate agent
-                step_type = step_info.get("type") if step_info else None
-                executor = self.get_executor(step_type)
-                step_result = await self._execute_step(executor, step_info)
-                result += step_result + "\n"
+                    # Execute current step with appropriate agent
+                    step_type = step_info.get("type") if step_info else None
+                    executor = self.get_executor(step_type)
+                    print(f"Executing step {self.current_step_index} with {executor.name}")
+                    step_result = await self._execute_step(executor, step_info)
+                    result += step_result + "\n"
 
-                # Check if agent wants to terminate
-                if hasattr(executor, "state") and executor.state == AgentState.FINISHED:
-                    break
+                    # Check if agent wants to terminate
+                    if hasattr(executor, "state") and executor.state == AgentState.FINISHED:
+                        print("Executor requested termination")
+                        break
+            except Exception as e:
+                print(f"Exception in execution loop: {str(e)}")
+                logger.error(f"Exception in execution loop: {str(e)}")
+                raise
 
+            print("Plan execution completed")
             return result
         except Exception as e:
             logger.error(f"Error in PlanningFlow: {str(e)}")
+            print(f"Error in PlanningFlow execute: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return f"Execution failed: {str(e)}"
 
     async def _create_initial_plan(self, request: str, job_id: str = None) -> None:
@@ -120,6 +160,7 @@ class PlanningFlow(BaseFlow):
             if len(job_id) < 10:  # 如果太短，加上时间戳
                 job_id = f"job_{int(time.time())}"
 
+        session_id = job_id or self.active_plan_id
         log_file_path = f"logs/{job_id}.log"
         os.environ["OPENMANUS_TASK_ID"] = job_id
         os.environ["OPENMANUS_LOG_FILE"] = log_file_path
@@ -128,6 +169,13 @@ class PlanningFlow(BaseFlow):
         logger.add(log_file_path, rotation="100 MB")
 
         logger.info(f"Creating initial plan with ID: {self.active_plan_id}")
+        
+        # Add thinking step for plan creation
+        ThinkingTracker.add_thinking_step(
+            session_id,
+            f"Creating a plan for: {request[:100]}{'...' if len(request) > 100 else ''}",
+            "thinking"
+        )
 
         # 原有代码继续执行
         # Create a system message for plan creation
@@ -142,13 +190,23 @@ class PlanningFlow(BaseFlow):
             f"Create a reasonable plan with clear steps to accomplish the task: {request}"
         )
 
-        # Call LLM with PlanningTool
-        response = await self.llm.ask_tool(
-            messages=[user_message],
-            system_msgs=[system_message],
-            tools=[self.planning_tool.to_param()],
-            tool_choice="required",
-        )
+        # Try to execute the LLM call
+        try:
+            # Call LLM with PlanningTool
+            print(f"Calling LLM to create plan for '{request[:50]}...'")  # Debug log
+            response = await self.llm.ask_tool(
+                messages=[user_message],
+                system_msgs=[system_message],
+                tools=[self.planning_tool.to_param()],
+                tool_choice="required",
+            )
+            
+            print(f"LLM response received. Tool calls present: {bool(response.tool_calls)}")  # Debug log
+            
+        except Exception as e:
+            print(f"Error creating plan with LLM: {str(e)}")  # Debug log
+            logger.error(f"Error creating plan with LLM: {str(e)}")
+            # Continue with fallback logic
 
         # Process tool calls if present
         if response.tool_calls:
@@ -168,6 +226,21 @@ class PlanningFlow(BaseFlow):
 
                     # Execute the tool via ToolCollection instead of directly
                     result = await self.planning_tool.execute(**args)
+
+                    # Add created plan to thinking steps
+                    if result:
+                        session_id = job_id or self.active_plan_id
+                        plan_steps = self.planning_tool.plans[self.active_plan_id].get("steps", [])
+                        steps_text = "\n".join([f"- {step}" for step in plan_steps[:10]])
+                        if len(plan_steps) > 10:
+                            steps_text += f"\n...and {len(plan_steps) - 10} more steps"
+                        
+                        ThinkingTracker.add_thinking_step(
+                            session_id,
+                            f"Created plan: {self.planning_tool.plans[self.active_plan_id].get('title', 'Untitled Plan')}",
+                            "thinking",
+                            {"plan": steps_text}
+                        )
 
                     logger.info(f"Plan creation result: {str(result)}")
                     return
@@ -203,12 +276,17 @@ class PlanningFlow(BaseFlow):
             steps = plan_data.get("steps", [])
             step_statuses = plan_data.get("step_statuses", [])
 
+            # Add debug logs for plan data
+            print(f"Plan data: {self.active_plan_id}, Steps: {len(steps)}, Statuses: {len(step_statuses)}")
+            
             # Find first non-completed step
             for i, step in enumerate(steps):
                 if i >= len(step_statuses):
                     status = "not_started"
                 else:
                     status = step_statuses[i]
+                    
+                print(f"Step {i}: '{step[:30]}...' Status: {status}")
 
                 if status in ["not_started", "in_progress"]:
                     # Extract step type/category if available
@@ -220,6 +298,8 @@ class PlanningFlow(BaseFlow):
                     type_match = re.search(r"\[([A-Z_]+)\]", step)
                     if type_match:
                         step_info["type"] = type_match.group(1).lower()
+                        
+                    print(f"Found active step {i}: {step[:50]}")
 
                     # Mark current step as in_progress
                     try:
@@ -229,8 +309,10 @@ class PlanningFlow(BaseFlow):
                             step_index=i,
                             step_status="in_progress",
                         )
+                        print(f"Successfully marked step {i} as in_progress")
                     except Exception as e:
                         logger.warning(f"Error marking step as in_progress: {e}")
+                        print(f"Error marking step as in_progress: {e}")
                         # Update step status directly if needed
                         if i < len(step_statuses):
                             step_statuses[i] = "in_progress"
@@ -243,10 +325,12 @@ class PlanningFlow(BaseFlow):
 
                     return i, step_info
 
+            print("No active step found in plan")
             return None, None  # No active step found
 
         except Exception as e:
             logger.warning(f"Error finding current step index: {e}")
+            print(f"Error in _get_current_step_info: {e}")
             return None, None
 
     async def _execute_step(self, executor: BaseAgent, step_info: dict) -> str:
@@ -254,6 +338,31 @@ class PlanningFlow(BaseFlow):
         # Prepare context for the agent with current plan status
         plan_status = await self._get_plan_text()
         step_text = step_info.get("text", f"Step {self.current_step_index}")
+        session_id = os.environ.get("OPENMANUS_TASK_ID", self.active_plan_id)
+
+        # Generate a unique step ID only for plan steps that need to be tracked/updated
+        if self.current_step_index is not None:
+            step_id = f"plan_step_{self.current_step_index + 1}"
+        else:
+            step_id = None
+
+        # Add thinking step for the current task
+        # Use detailed step information rather than just the text
+        step_details = None
+        if step_id:
+            step_details = {
+                "step_id": step_id,
+                "step_index": self.current_step_index + 1 if self.current_step_index is not None else 0,
+                "step_text": step_text,
+                "status": "in_progress"
+            }
+            
+        ThinkingTracker.add_thinking_step(
+            session_id,
+            f"Working on step {self.current_step_index + 1 if self.current_step_index is not None else '?'}: {step_text}",
+            "thinking",
+            step_details
+        )
 
         # Create a prompt for the agent to execute the current step
         step_prompt = f"""
@@ -268,10 +377,31 @@ class PlanningFlow(BaseFlow):
 
         # Use agent.run() to execute the step
         try:
+            print(f"Starting execution of step {self.current_step_index + 1 if self.current_step_index is not None else '?'}: {step_text}")
             step_result = await executor.run(step_prompt)
+            print(f"Successfully completed step {self.current_step_index + 1 if self.current_step_index is not None else '?'}")
 
             # Mark the step as completed after successful execution
             await self._mark_step_completed()
+
+            # Add completion thinking step with more detailed information
+            completion_step_details = None
+            if self.current_step_index is not None:
+                completion_step_id = f"plan_step_{self.current_step_index + 1}"
+                completion_step_details = {
+                    "step_id": completion_step_id,
+                    "step_index": self.current_step_index + 1,
+                    "step_text": step_text,
+                    "status": "completed",
+                    "result": step_result
+                }
+                
+            ThinkingTracker.add_thinking_step(
+                os.environ.get("OPENMANUS_TASK_ID", self.active_plan_id),
+                f"Completed step {self.current_step_index + 1 if self.current_step_index is not None else '?'}: {step_text}",
+                "thinking",
+                completion_step_details
+            )
 
             return step_result
         except Exception as e:

@@ -121,6 +121,7 @@ class PlanningTool(BaseTool):
         self, plan_id: Optional[str], title: Optional[str], steps: Optional[List[str]]
     ) -> ToolResult:
         """Create a new plan with the given ID, title, and steps."""
+        print(f"Creating plan with ID: {plan_id}, title: {title}, steps: {len(steps) if steps else 0}")
         if not plan_id:
             raise ToolError("Parameter `plan_id` is required for command: create")
 
@@ -152,6 +153,8 @@ class PlanningTool(BaseTool):
 
         self.plans[plan_id] = plan
         self._current_plan_id = plan_id  # Set as active plan
+        print(f"Plan created successfully. It has {len(steps)} steps.")
+        print(f"First 3 steps: {steps[:3]}")
 
         return ToolResult(
             output=f"Plan created successfully with ID: {plan_id}\n\n{self._format_plan(plan)}"

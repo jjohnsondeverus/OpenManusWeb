@@ -1,246 +1,254 @@
-// connected_interface.js - Main JavaScript file, responsible for initializing and coordinating other modules
+// connected_interface.js - Main JavaScript file for coordinating modules
 
-// Import manager classes
-import { WebSocketManager } from './connected_websocketManager.js';
-import { ChatManager } from './connected_chatManager.js';
-import { ThinkingManager } from './connected_thinkingManager.js';
-import { WorkspaceManager } from './connected_workspaceManager.js';
-import { FileViewerManager } from './connected_fileViewerManager.js';
-import { TerminalManager } from './connected_terminalManager.js';
-import { t, updatePageTexts as updateLanguageElements, setLanguage } from './i18n.js';
-
-// Main App class
-class App {
+export class App {
     constructor() {
-        console.log("Initializing App...");
+        this.websocketManager = null;
+        this.chatManager = null;
+        this.thinkingManager = null;
+        this.fileViewerManager = null;
+        this.terminal = null;
+        this.terminalFitAddon = null;
+        this.activeTab = 'terminal';
         
-        // Create manager instances
-        this.wsManager = new WebSocketManager();
+        // Bind methods
+        this.handleWebSocketMessage = this.handleWebSocketMessage.bind(this);
+        this.switchTab = this.switchTab.bind(this);
+    }
+
+    async init() {
+        // Wait for DOM to be fully loaded
+        if (document.readyState === 'loading') {
+            await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve));
+        }
+
+        // Initialize managers
+        this.websocketManager = new WebSocketManager(this.handleWebSocketMessage);
         this.chatManager = new ChatManager();
         this.thinkingManager = new ThinkingManager();
-        this.workspaceManager = new WorkspaceManager();
         this.fileViewerManager = new FileViewerManager();
-        this.terminalManager = new TerminalManager();
-        
-        // Initialize application
-        this.init();
+
+        // Initialize terminal
+        this.initTerminal();
+
+        // Initialize tab switching
+        this.initTabs();
+
+        // Add event listeners
+        this.addEventListeners();
     }
-    
-    // Initialize app
-    init() {
+
+    initTerminal() {
         try {
-            // Initialize all managers
-            console.log("Initializing managers...");
-            
-            // Initialize terminal manager first (for logging)
-            this.terminalManager.init();
-            this.terminalManager.addLine("Initializing application...", "system");
-            
-            // Initialize other managers
-            this.wsManager.init();
-            this.chatManager.init();
-            this.thinkingManager.init();
-            
-            // Initialize file-related managers
-            this.fileViewerManager.init();
-            this.workspaceManager.init((file) => {
-                // File click callback
-                if (file && file.path) {
-                    this.fileViewerManager.showFile(file.path, file.name);
+            // Create terminal instance
+            this.terminal = new Terminal({
+                cursorBlink: true,
+                theme: {
+                    background: '#1a1a1a',
+                    foreground: '#f0f0f0'
                 }
             });
-            
-            // Bind events
-            this.bindEvents();
-            
-            // Update all language elements
-            updateLanguageElements();
-            
-            console.log("App initialization complete");
-            this.terminalManager.addLine("Application initialized successfully", "system");
-            
-            // Load workspace files
-            this.loadWorkspace();
+
+            // Add fit addon
+            this.terminalFitAddon = new window.FitAddon.FitAddon();
+            this.terminal.loadAddon(this.terminalFitAddon);
+
+            // Open terminal in container
+            const terminalContainer = document.getElementById('terminal-container');
+            this.terminal.open(terminalContainer);
+            this.terminalFitAddon.fit();
+
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                if (this.activeTab === 'terminal') {
+                    this.terminalFitAddon.fit();
+                }
+            });
+
+            // Add welcome message
+            this.terminal.writeln('Welcome to Manus AI Terminal');
+            this.terminal.writeln('--------------------------------');
+            this.terminal.writeln('Terminal ready. Waiting for commands...\n');
         } catch (error) {
-            console.error("Error during app initialization:", error);
-            this.terminalManager.addLine(`Error initializing application: ${error.message}`, "error");
+            console.error('Failed to initialize terminal:', error);
         }
     }
-    
-    // Bind UI events
-    bindEvents() {
-        // Message sending
-        const messageInput = document.getElementById('message-input');
-        const sendButton = document.getElementById('send-button');
-        
-        // Check if elements exist before binding
-        if (messageInput && sendButton) {
-            // Send button click
-            sendButton.addEventListener('click', () => {
-                this.sendMessage();
+
+    initTabs() {
+        const tabs = document.querySelectorAll('.computer-tab');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.getAttribute('data-tab');
+                this.switchTab(tabName);
             });
-            
-            // Enter key in input
-            messageInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    this.sendMessage();
-                }
-            });
-        } else {
-            console.error("Could not find message input or send button elements");
-        }
-        
-        // Workspace refresh
-        const refreshButton = document.getElementById('refresh-workspace');
-        if (refreshButton) {
-            refreshButton.addEventListener('click', () => {
-                this.loadWorkspace();
-            });
-        } else {
-            console.warn("Refresh workspace button not found");
-        }
-        
-        // WebSocket message handling
-        this.wsManager.onMessage((data) => {
-            this.handleWebSocketMessage(data);
         });
-        
-        // WebSocket connection status
-        this.wsManager.onStatusChange((isConnected) => {
-            const statusElement = document.getElementById('status-indicator');
-            if (statusElement) {
-                statusElement.className = isConnected ? 'connected' : 'disconnected';
-                statusElement.title = isConnected ? 'Connected' : 'Disconnected';
+    }
+
+    switchTab(tabName) {
+        // Update active tab
+        this.activeTab = tabName;
+
+        // Update tab buttons
+        const tabs = document.querySelectorAll('.computer-tab');
+        tabs.forEach(tab => {
+            tab.classList.toggle('active', tab.getAttribute('data-tab') === tabName);
+        });
+
+        // Update container visibility
+        const containers = document.querySelectorAll('.computer-container');
+        containers.forEach(container => {
+            container.style.display = 'none';
+        });
+        document.getElementById(`${tabName}-container`).style.display = 'block';
+
+        // Special handling for terminal
+        if (tabName === 'terminal' && this.terminal) {
+            this.terminalFitAddon.fit();
+        }
+    }
+
+    addEventListeners() {
+        // Send button
+        document.getElementById('send-btn').addEventListener('click', () => {
+            const input = document.getElementById('user-input');
+            if (input.value.trim()) {
+                this.sendMessage(input.value);
+                input.value = '';
             }
         });
-        
+
+        // Input enter key
+        document.getElementById('user-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                document.getElementById('send-btn').click();
+            }
+        });
+
+        // Stop button
+        document.getElementById('stop-btn').addEventListener('click', () => {
+            this.websocketManager.sendStop();
+            document.getElementById('stop-btn').disabled = true;
+        });
+
+        // Clear buttons
+        document.getElementById('clear-btn').addEventListener('click', () => {
+            this.chatManager.clearMessages();
+        });
+
+        document.getElementById('clear-thinking').addEventListener('click', () => {
+            this.thinkingManager.clearThinking();
+        });
+
         // Language selector
-        const languageSelector = document.getElementById('language-selector');
-        if (languageSelector) {
-            languageSelector.addEventListener('change', (e) => {
-                const selectedLanguage = e.target.value;
-                this.changeLanguage(selectedLanguage);
-            });
-        }
+        document.getElementById('language-select').addEventListener('change', (e) => {
+            this.i18n.setLanguage(e.target.value);
+        });
     }
-    
-    // Send message to backend
-    sendMessage() {
-        const messageInput = document.getElementById('message-input');
-        if (!messageInput) return;
-        
-        const message = messageInput.value.trim();
-        if (message) {
+
+    async sendMessage(message) {
+        try {
+            // Disable send button and enable stop button
+            document.getElementById('send-btn').disabled = true;
+            document.getElementById('stop-btn').disabled = false;
+
+            // Clear previous thinking steps
+            this.thinkingManager.clearThinking();
+
             // Add user message to chat
             this.chatManager.addUserMessage(message);
-            
-            // Clear input
-            messageInput.value = '';
-            
-            // Add to terminal
-            this.terminalManager.addLine(message, 'command');
-            
-            // Send to backend
-            this.wsManager.sendMessage({
-                type: 'user_message',
-                content: message
+
+            // Send message to server
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ prompt: message }),
             });
+
+            if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
             
-            // Show thinking indicator
-            this.chatManager.showThinking();
+            // Connect to WebSocket with session ID
+            if (data.session_id) {
+                this.websocketManager.connect(data.session_id);
+            } else {
+                throw new Error('No session ID received from server');
+            }
+
+        } catch (error) {
+            console.error('Error:', error);
+            this.chatManager.addSystemMessage(`Error: ${error.message}`);
+            document.getElementById('send-btn').disabled = false;
+            document.getElementById('stop-btn').disabled = true;
         }
     }
-    
-    // Handle WebSocket messages
+
     handleWebSocketMessage(data) {
         try {
-            if (!data || !data.type) {
-                console.error("Invalid WebSocket message received:", data);
-                return;
+            console.log('App handling WebSocket message:', JSON.stringify(data));
+            
+            // Handle thinking steps - check for different property names
+            const thinkingSteps = data.thinking_steps || data.thinkingSteps || [];
+            if (thinkingSteps && Array.isArray(thinkingSteps) && thinkingSteps.length > 0) {
+                console.log(`Received ${thinkingSteps.length} thinking steps from WebSocket`);
+                
+                // Check if this is an update to existing steps
+                if (data.updated) {
+                    console.log('This is an update to existing steps');
+                    this.thinkingManager.addThinkingSteps(thinkingSteps, false, true);
+                } else {
+                    // Detect if this is a full update with all steps (initial load or large batch)
+                    // or just an incremental update with new steps
+                    const isFullUpdate = thinkingSteps.length > 5;
+                    
+                    // For full updates, replace the entire array; for small updates, just append
+                    this.thinkingManager.addThinkingSteps(thinkingSteps, isFullUpdate, false);
+                }
+            } else {
+                console.warn('No valid thinking steps found in the message');
             }
-            
-            console.log(`Received ${data.type} message from backend`);
-            
-            switch (data.type) {
-                case 'assistant_message':
-                    this.chatManager.addAssistantMessage(data.content);
-                    break;
-                    
-                case 'thinking_step':
-                    if (data.steps) {
-                        this.thinkingManager.addThinkingSteps(data.steps);
+
+            // Handle terminal output
+            if (data.terminal_output) {
+                data.terminal_output.forEach(output => {
+                    if (output.output) {
+                        this.terminal.writeln(output.output);
                     }
-                    break;
-                    
-                case 'terminal_output':
-                    this.terminalManager.addOutput(data.content);
-                    break;
-                    
-                case 'workspace_update':
-                    if (data.workspaces) {
-                        this.workspaceManager.updateWorkspaces(data.workspaces);
+                });
+            }
+
+            // Handle status changes
+            if (data.status === 'completed' || data.status === 'error') {
+                document.getElementById('stop-btn').disabled = true;
+                document.getElementById('send-btn').disabled = false;
+                if (data.result) {
+                    this.chatManager.addAssistantMessage(data.result);
+                }
+            }
+
+            // Handle logs
+            if (data.logs) {
+                data.logs.forEach(log => {
+                    if (log.level === 'error') {
+                        console.error(log.message);
+                    } else {
+                        console.log(log.message);
                     }
-                    break;
-                    
-                case 'error':
-                    console.error("Error from backend:", data.content);
-                    this.chatManager.addErrorMessage(data.content);
-                    this.terminalManager.addLine(data.content, 'error');
-                    break;
-                    
-                default:
-                    console.warn("Unknown message type:", data.type);
+                });
             }
         } catch (error) {
-            console.error("Error handling WebSocket message:", error);
-            this.terminalManager.addLine(`Error handling message: ${error.message}`, "error");
+            console.error('Error handling WebSocket message:', error);
+            this.chatManager.addSystemMessage(`Error: ${error.message}`);
         }
-    }
-    
-    // Load workspace files
-    loadWorkspace() {
-        console.log("Loading workspace files...");
-        this.terminalManager.addLine("Loading workspace files...", "system");
-        
-        this.wsManager.sendMessage({
-            type: 'get_workspace'
-        });
-    }
-    
-    // Change interface language
-    changeLanguage(language) {
-        console.log(`Changing language to ${language}`);
-        
-        // Update language
-        setLanguage(language);
-        
-        // Update all text elements
-        updateLanguageElements();
-        
-        // Add to terminal
-        this.terminalManager.addLine(`Language changed to ${language}`, "system");
     }
 }
 
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    try {
-        console.log("DOM loaded, starting application");
-        window.app = new App();
-    } catch (error) {
-        console.error("Error starting application:", error);
-        
-        // Try to show error in terminal if possible
-        const terminalContainer = document.getElementById('terminal-output');
-        if (terminalContainer) {
-            const errorLine = document.createElement('div');
-            errorLine.className = 'terminal-line error';
-            errorLine.innerHTML = `<span class="error-prefix">CRITICAL ERROR:</span> ${error.message}`;
-            terminalContainer.appendChild(errorLine);
-        }
-        
-        // Show alert as fallback
-        alert(`Error starting application: ${error.message}`);
-    }
+    window.app = new App();
+    window.app.init();
 });

@@ -1,0 +1,78 @@
+.timeline-item {
+    position: relative;
+    padding: 10px 0 10px 30px;
+    margin-bottom: 10px;
+    border-left: 2px solid #e0e0e0;
+    transition: all 0.3s ease;
+    opacity: 0;
+}
+
+.timeline-item:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.timeline-marker {
+    position: absolute;
+    left: -6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #007bff;
+    border: 2px solid white;
+}
+
+.timeline-content {
+    padding: 0 15px;
+}
+
+.timeline-header {
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.timeline-timestamp {
+    font-size: 0.8em;
+    color: #666;
+}
+
+.timeline-details {
+    margin-top: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.btn-details {
+    margin: 5px 0;
+    padding: 2px 8px;
+    font-size: 0.8em;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+}
+
+.btn-details:hover {
+    background: #f0f0f0;
+}
+
+#thinking-timeline {
+    height: 100%;
+    overflow-y: auto;
+    padding-right: 10px;
+    scrollbar-width: thin;
+    scrollbar-color: #888 #f0f0f0;
+}
+
+#thinking-timeline::-webkit-scrollbar {
+    width: 8px;
+}
+
+#thinking-timeline::-webkit-scrollbar-track {
+    background: #f0f0f0;
+}
+
+#thinking-timeline::-webkit-scrollbar-thumb {
+    background-color: #888;
+    border-radius: 4px;
+} 

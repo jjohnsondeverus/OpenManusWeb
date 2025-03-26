@@ -1,3 +1,7 @@
+import asyncio
+import re
+import random
+import time
 from typing import Dict, List, Literal, Optional, Union
 
 from openai import (
@@ -8,7 +12,7 @@ from openai import (
     OpenAIError,
     RateLimitError,
 )
-from tenacity import retry, stop_after_attempt, wait_random_exponential
+from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type, before_sleep_log
 
 from app.config import LLMSettings, config
 from app.logger import logger  # Assuming a logger is set up in your app
@@ -98,8 +102,10 @@ class LLM:
         return formatted_messages
 
     @retry(
+        retry=retry_if_exception_type(RateLimitError),
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
+        before_sleep=lambda retry_state: logger.warning(f"Rate limited, retrying in {retry_state.next_action.sleep:.2f} seconds...")
     )
     async def ask(
         self,
@@ -126,6 +132,8 @@ class LLM:
             Exception: For unexpected errors
         """
         try:
+            # Add jitter to help distribute requests
+            await asyncio.sleep(random.uniform(0.1, 0.5))
             # Format system and user messages
             if system_msgs:
                 system_msgs = self.format_messages(system_msgs)
@@ -170,6 +178,16 @@ class LLM:
         except ValueError as ve:
             logger.error(f"Validation error: {ve}")
             raise
+        except RateLimitError as e:
+            # Extract retry time from error message if possible
+            retry_match = re.search(r'try again in (\d+)ms', str(e))
+            if retry_match:
+                retry_ms = int(retry_match.group(1))
+                retry_sec = retry_ms / 1000.0 + 0.1  # Add a small buffer
+                logger.warning(f"Rate limit reached. Retrying after {retry_sec:.2f} seconds")
+                await asyncio.sleep(retry_sec)
+            # Re-raise to let the @retry decorator handle it
+            raise
         except OpenAIError as oe:
             logger.error(f"OpenAI API error: {oe}")
             raise
@@ -178,8 +196,10 @@ class LLM:
             raise
 
     @retry(
+        retry=retry_if_exception_type(RateLimitError),
         wait=wait_random_exponential(min=1, max=60),
         stop=stop_after_attempt(6),
+        before_sleep=lambda retry_state: logger.warning(f"Rate limited, retrying in {retry_state.next_action.sleep:.2f} seconds...")
     )
     async def ask_tool(
         self,
@@ -212,6 +232,9 @@ class LLM:
             Exception: For unexpected errors
         """
         try:
+            # Add jitter to help distribute requests
+            await asyncio.sleep(random.uniform(0.1, 0.5))
+            
             # Validate tool_choice
             if tool_choice not in ["none", "auto", "required"]:
                 raise ValueError(f"Invalid tool_choice: {tool_choice}")
@@ -255,7 +278,17 @@ class LLM:
             if isinstance(oe, AuthenticationError):
                 logger.error("Authentication failed. Check API key.")
             elif isinstance(oe, RateLimitError):
-                logger.error("Rate limit exceeded. Consider increasing retry attempts.")
+                # Extract retry time from error message if possible
+                retry_match = re.search(r'try again in (\d+)ms', str(oe))
+                if retry_match:
+                    retry_ms = int(retry_match.group(1))
+                    retry_sec = retry_ms / 1000.0 + 0.1  # Add a small buffer
+                    logger.warning(f"Rate limit reached. Retrying after {retry_sec:.2f} seconds")
+                    await asyncio.sleep(retry_sec)
+                else:
+                    logger.warning("Rate limit exceeded. Consider increasing retry attempts.")
+                # Re-raise to let the @retry decorator handle it
+                raise
             elif isinstance(oe, APIError):
                 logger.error(f"API error: {oe}")
             raise

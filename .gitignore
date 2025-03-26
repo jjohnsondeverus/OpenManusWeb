@@ -183,3 +183,4 @@ config/config.toml
 
 # SpecStory files
 .specstory/
+.aider*
