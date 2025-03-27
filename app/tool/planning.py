@@ -1,5 +1,6 @@
 # tool/planning.py
 from typing import Dict, List, Literal, Optional
+from loguru import logger
 
 from app.exceptions import ToolError
 from app.tool.base import BaseTool, ToolResult
@@ -364,3 +365,23 @@ class PlanningTool(BaseTool):
                 output += f"   Notes: {notes}\n"
 
         return output
+
+    async def mark_step_completed(self, plan_id: str, step_index: int):
+        """Mark a specific step in a plan as completed."""
+        logger.debug(f"PlanningTool: Attempting to mark step {step_index} completed for plan {plan_id}")
+        if plan_id not in self.plans:
+            logger.error(f"PlanningTool: Plan {plan_id} not found for marking step completed.")
+            # Optionally return an error or raise an exception
+            return
+
+        plan = self.plans[plan_id]
+        if "step_statuses" not in plan or not isinstance(plan["step_statuses"], list):
+            logger.error(f"PlanningTool: 'step_statuses' missing or invalid for plan {plan_id}.")
+            return
+
+        if 0 <= step_index < len(plan["step_statuses"]):
+            plan["step_statuses"][step_index] = "completed"
+            logger.info(f"PlanningTool: Marked step {step_index} of plan {plan_id} as completed.")
+            # Optionally, update a timestamp or add a note here
+        else:
+            logger.error(f"PlanningTool: Invalid step index {step_index} for plan {plan_id} with {len(plan['step_statuses'])} statuses.")

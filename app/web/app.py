@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 import webbrowser
+import logging
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -28,6 +29,8 @@ from app.web.log_handler import capture_session_logs, get_logs
 from app.web.log_parser import get_all_logs_info, get_latest_log_info, parse_log_file
 from app.web.thinking_tracker import ThinkingTracker, ThinkingStep
 from app.web.session_storage import SessionStorage
+from app.llm import LLM
+from app.tool import ToolCollection, PlanningTool
 
 
 # 控制是否自动打开浏览器 (读取环境变量，默认为True)
@@ -123,13 +126,16 @@ async def get_connected_interface(request: Request):
 async def create_chat_session(
     session_req: SessionRequest, background_tasks: BackgroundTasks
 ):
+    print(f"[/api/chat] Received request.") # API Request Log (General)
     """Create a new chat session with the given prompt."""
     session_id = str(uuid.uuid4())
+    print(f"[/api/chat] Generated session ID: {session_id}") # API Session ID Log
     active_sessions[session_id] = {
         "status": "processing",
         "result": None,
         "log": [],
         "workspace": None,
+        "prompt": session_req.prompt # Store prompt in session
     }
 
     # Create cancel event
@@ -137,10 +143,13 @@ async def create_chat_session(
 
     # Start tracking with prompt
     ThinkingTracker.start_tracking(session_id, prompt=session_req.prompt)
+    print(f"[/api/chat] Started thinking tracking for session {session_id}") # API Tracking Log
 
     # Process prompt in background
+    print(f"[/api/chat] Adding background task 'process_prompt' for session {session_id}") # Log adding task
     background_tasks.add_task(process_prompt, session_id, session_req.prompt)
-    
+    print(f"[/api/chat] Background task added for session {session_id}") # Log task added
+    print(f"[/api/chat] Returning initial response for session {session_id}") # Log returning response
     return {
         "session_id": session_id,
         "workspace": active_sessions[session_id]["workspace"],
@@ -288,75 +297,46 @@ async def stop_processing(session_id: str):
 
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
-    """WebSocket endpoint for real-time updates."""
+    """Handles WebSocket connections for real-time updates."""
+    print(f"--- WebSocket connection attempt for session {session_id} (in app.py) ---") # Log connection attempt
     await websocket.accept()
-    
-    # Register WebSocket callback
+    print(f"--- WebSocket accepted for session {session_id} (in app.py) ---") # Log acceptance
+
+    # Register the WebSocket send callback for this session
+    print(f"Registering WebSocket callback for session {session_id} (in app.py)...") # Log before registration
     ThinkingTracker.register_ws_send_callback(session_id, websocket.send_text)
-    
+    print(f"WebSocket callback registered for session {session_id} (in app.py).") # Log after registration
+
     try:
-        # Get initial state from database
-        session_data = storage.get_session_data(session_id)
-        thinking_steps = session_data.get("thinking_steps", [])
-        
-        # Initialize in-memory state if needed
-        if session_id not in ThinkingTracker._session_steps:
-            ThinkingTracker.start_tracking(session_id)
-            # Load thinking steps from database into memory
-            for step in thinking_steps:
-                ThinkingTracker._session_steps[session_id].append(
-                    ThinkingStep(
-                        step["message"],
-                        step["type"],
-                        step.get("details")
-                    )
-                )
-        
-        # Prepare initial state - ensure thinking steps are loaded from both memory and db
-        in_memory_steps = ThinkingTracker._session_steps.get(session_id, [])
-        if in_memory_steps:
-            thinking_steps_data = [step.to_dict() for step in in_memory_steps]
-        else:
-            thinking_steps_data = thinking_steps or ThinkingTracker.get_thinking_steps(session_id)
-        
-        print(f"Sending initial {len(thinking_steps_data)} thinking steps via WebSocket - FULL UPDATE")
-        
-        initial_state = {
-            "status": ThinkingTracker.get_status(session_id),
-            "thinking_steps": thinking_steps_data,
-            "progress": ThinkingTracker.get_progress(session_id),
-            "logs": ThinkingTracker.get_logs(session_id)
-        }
-        
-        # Log data being sent for debugging
-        print(f"Initial WebSocket state: {json.dumps(initial_state)}")
-        
-        # Send initial state
-        await websocket.send_json(initial_state)
-        
-        # Keep connection alive and handle client messages
+        # Send initial state immediately upon connection
+        initial_state = ThinkingTracker.get_full_state(session_id)
+        print(f"Sending initial WebSocket state for session {session_id} (in app.py): {json.dumps(initial_state)[:100]}...") # Log initial state send
+        print(f"Initial WebSocket state: {json.dumps(initial_state)}") # Log full initial state for debugging
+        await websocket.send_text(json.dumps(initial_state))
+        print(f"Initial WebSocket state sent for session {session_id} (in app.py).") # Log after initial state send
+
+        # Keep the connection alive
         while True:
-            try:
-                data = await websocket.receive_json()
-                if data.get("type") == "cancel":
-                    if session_id in cancel_events:
-                        cancel_events[session_id].set()
-                        ThinkingTracker.mark_stopped(session_id)
-            except WebSocketDisconnect:
-                break
-            except Exception as e:
-                print(f"WebSocket error: {str(e)}")
-                break
+            # Wait for a message (or timeout, keepalive)
+            # Receiving data is important to detect disconnects properly
+            data = await websocket.receive_text()
+            print(f"Received message from client {session_id}: {data}") # Log received message
+            # Handle client messages if necessary
+            if data.get("type") == "cancel":
+                if session_id in cancel_events:
+                    cancel_events[session_id].set()
+                    ThinkingTracker.mark_stopped(session_id)
+    except WebSocketDisconnect:
+        print(f"WebSocket disconnected for session {session_id} (in app.py).") # Log disconnect
     except Exception as e:
-        print(f"WebSocket error: {str(e)}")
+        print(f"Error in WebSocket endpoint for session {session_id} (in app.py): {e}") # Log error
+        logging.error(f"WebSocket error for session {session_id} (in app.py): {e}", exc_info=True) # Use logging.error
     finally:
-        # Clean up
+        # Unregister the callback when the connection closes
+        print(f"Unregistering WebSocket callback for session {session_id} (in app.py)...") # Log before unregistration
         ThinkingTracker.unregister_ws_send_callback(session_id)
-        if not websocket.client_state.DISCONNECTED:
-            try:
-                await websocket.close()
-            except Exception as e:
-                print(f"Error closing WebSocket: {str(e)}")
+        print(f"WebSocket callback unregistered for session {session_id} (in app.py).") # Log after unregistration
+        print(f"--- WebSocket connection closed for session {session_id} (in app.py) ---") # Log connection close
 
 
 # 在适当位置添加LLM通信钩子
@@ -599,85 +579,80 @@ async def get_file_content(file_path: str):
 
 # 修改process_prompt函数，处理工作区
 async def process_prompt(session_id: str, prompt: str):
-    """Process a prompt and return the result."""
-    print(f"Processing prompt for session {session_id}: {prompt[:50]}...")
-    try:
-        # Create workspace directory
-        workspace_dir = create_workspace(session_id)
-        active_sessions[session_id]["workspace"] = str(workspace_dir.relative_to(WORKSPACE_ROOT))
-        
-        # Add initial thinking step for debugging
-        ThinkingTracker.add_thinking_step(session_id, "Started processing request", "thinking", {"prompt": prompt[:100] + "..."})
+    """Process the prompt using the appropriate flow."""
+    print(f"[BG Task {session_id}] Starting background task.") # BG Task Start Log
+    workspace_dir = create_workspace(session_id)
+    active_sessions[session_id]["workspace"] = str(workspace_dir)
+    os.environ["OPENMANUS_WORKSPACE"] = str(workspace_dir)
+    os.environ["OPENMANUS_TASK_ID"] = session_id # Set task ID for logging
 
-        # Save initial session state
-        storage.save_session(
-            session_id=session_id,
-            prompt=prompt,
-            workspace=str(workspace_dir.relative_to(WORKSPACE_ROOT)),
-            status="processing"
-        )
-
-        # Initialize flow and agent
-        agents = {"manus": Manus()}
-        flow = FlowFactory.create_flow(FlowType.PLANNING, agents=agents)
-        
-        # Initialize communication tracker with the agent
-        comm_tracker = LLMCommunicationTracker(session_id, agents["manus"])
-
+    # Use capture_session_logs as a context manager
+    with capture_session_logs(session_id):
+        print(f"[BG Task {session_id}] Workspace and logging setup complete.") # BG Task Setup Log
         try:
-            # Execute flow
-            result = await flow.execute(prompt, session_id, cancel_events.get(session_id))
-            
-            # Update session with results
+            # --- Agent and Flow Creation ---
+            # Create necessary components for the agent/flow
+            llm = LLM()
+            planning_tool = PlanningTool()
+            # Pass tool instances directly to ToolCollection, not in a list
+            tools = ToolCollection(planning_tool)
+            # Create the agent (e.g., Manus or a specific planner agent)
+            agent = Manus(llm=llm, tools=tools) # Assuming Manus is the primary agent
+            agents_dict = {"planner": agent} # Pass agents as a dictionary
+
+            # Determine flow type (default to PLANNING for now)
+            flow_type = FlowType.PLANNING
+            flow = FlowFactory.create_flow(flow_type, agents=agents_dict, session_id=session_id) # Pass agents
+
+            # Get cancel event
+            cancel_event = cancel_events.get(session_id)
+
+            # Execute the flow
+            print(f"[BG Task {session_id}] BEFORE flow.execute()") # Log before execute
+            result = await flow.execute(prompt, job_id=session_id, cancel_event=cancel_event)
+            print(f"[BG Task {session_id}] AFTER flow.execute()") # Log after execute
+            print(f"[BG Task {session_id}] Flow execution completed. Result length: {len(result) if result else 'N/A'}") # BG Task Result Log
+
+            # Update session status and result
             active_sessions[session_id]["status"] = "completed"
             active_sessions[session_id]["result"] = result
-            
-            # Save final session state
-            storage.save_session(
-                session_id=session_id,
-                prompt=prompt,
-                workspace=str(workspace_dir.relative_to(WORKSPACE_ROOT)),
-                status="completed"
-            )
-            
-            # Save thinking steps and terminal outputs
-            storage.save_thinking_steps(
-                session_id=session_id,
-                steps=ThinkingTracker.get_thinking_steps(session_id)
-            )
-            
-            storage.save_terminal_outputs(
-                session_id=session_id,
-                outputs=ThinkingTracker.get_logs(session_id)
-            )
+            print(f"[BG Task {session_id}] Flow marked as completed.") # BG Task Status Log
+            ThinkingTracker.add_thinking_step(session_id, f"Flow execution completed successfully. Result length: {len(result) if result else 'N/A'}")
+
+            # Save session data
+            session_data = {
+                "session_id": session_id,
+                "prompt": prompt,
+                "result": result,
+                "thinking_steps": ThinkingTracker.get_all_thinking_steps(session_id),
+                "logs": get_logs(session_id),
+                "workspace": str(workspace_dir),
+                "timestamp": time.time()
+            }
+            storage.save_session(session_id, session_data)
+            print(f"[BG Task {session_id}] Session data saved.") # BG Task Save Log
+
+        except Exception as e:
+            # Update session status on error
+            active_sessions[session_id]["status"] = "error"
+            active_sessions[session_id]["result"] = f"Error: {str(e)}"
+            print(f"[BG Task {session_id}] !!! Exception in background task: {e}") # Log exception
+            ThinkingTracker.add_thinking_step(session_id, f"Error during flow execution: {str(e)}")
+            # Log the full traceback
+            import traceback
+            traceback_str = traceback.format_exc()
+            print(f"[BG Task {session_id}] Traceback:\n{traceback_str}") # Log traceback
+            ThinkingTracker.add_thinking_step(session_id, f"Traceback:\n{traceback_str}")
+            # Consider saving error state to storage here if needed
+
         finally:
-            # Clean up communication tracker
-            comm_tracker.uninstall_hooks()
-        
-    except Exception as e:
-        active_sessions[session_id]["status"] = "error"
-        active_sessions[session_id]["result"] = str(e)
-        
-        # Save error state
-        storage.save_session(
-            session_id=session_id,
-            prompt=prompt,
-            workspace=str(workspace_dir.relative_to(WORKSPACE_ROOT)) if workspace_dir else None,
-            status="error"
-        )
-        
-        # Save any thinking steps and terminal outputs that were generated
-        storage.save_thinking_steps(
-            session_id=session_id,
-            steps=ThinkingTracker.get_thinking_steps(session_id)
-        )
-        
-        storage.save_terminal_outputs(
-            session_id=session_id,
-            outputs=ThinkingTracker.get_logs(session_id)
-        )
-        
-        raise
+            # Cleanup within the 'with' block if needed, but log handler stop is automatic
+            pass # log_handler.stop() is removed as 'with' handles it
+
+        # Remove cancel event (outside the 'with' block)
+        if session_id in cancel_events:
+            del cancel_events[session_id]
+        print(f"[BG Task {session_id}] Background task finished.") # BG Task End Log
 
 
 # 添加一个新的API端点来获取思考步骤
@@ -710,7 +685,7 @@ async def add_debug_thinking_step(session_id: str):
     
     # Add a test thinking step
     step_message = f"Debug thinking step at {time.strftime('%H:%M:%S')}"    
-    ThinkingTracker.add_thinking_step(session_id, step_message, "thinking")
+    ThinkingTracker.add_thinking_step(session_id, step_message)
     
     return {
         "status": "added",

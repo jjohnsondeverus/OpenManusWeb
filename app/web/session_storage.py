@@ -3,6 +3,9 @@ import json
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SessionStorage:
     """Manages session storage and replay functionality."""
@@ -179,4 +182,22 @@ class SessionStorage:
         session["thinking_steps"] = thinking_steps
         session["terminal_outputs"] = terminal_outputs
         
-        return session 
+        return session
+    
+    def load_thinking_steps(self, session_id: str) -> List[Dict[str, Any]]:
+        """Load all thinking steps for a given session ID from the database."""
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            with conn:
+                cursor = conn.execute(
+                    "SELECT message, type, details, timestamp FROM thinking_steps WHERE session_id = ? ORDER BY timestamp ASC",
+                    (session_id,)
+                )
+                steps = cursor.fetchall()
+                # Convert rows to dictionaries
+                return [dict(step) for step in steps]
+        except sqlite3.Error as e:
+            logger.error(f"Database error loading thinking steps for session {session_id}: {e}")
+            return []
+        finally:
+            conn.close() 

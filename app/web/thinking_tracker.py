@@ -53,7 +53,7 @@ class ThinkingTracker:
     _session_progress: Dict[str, Dict[str, Any]] = {}  # 存储进度信息
     _session_logs: Dict[str, List[Dict]] = {}  # 存储日志内容
     _ws_send_callbacks: Dict[str, Any] = {}  # 存储WebSocket发送回调函数
-    _lock = threading.Lock()
+    _lock = threading.RLock()
     _storage = SessionStorage()  # Initialize database storage
 
     @classmethod
@@ -96,7 +96,9 @@ class ThinkingTracker:
         cls, session_id: str, message: str, step_type: str = "thinking", details: dict = None
     ) -> None:
         """Add a thinking step to the session."""
+        print(f"--- ENTERING add_thinking_step for session {session_id} ---") # Entry log
         print(f"Adding thinking step to session {session_id}: {message}")
+        print(f"Details received: {details!r}") # Log details
         
         if session_id not in cls._session_steps:
             print(f"Starting tracking for session {session_id} (it wasn't tracked before)")
@@ -109,6 +111,7 @@ class ThinkingTracker:
             print(f"Step has ID: {step_id}")
             
             # Only try to find existing steps if we have a step_id
+            print(f"Attempting to find existing step with ID: {step_id}")
             if step_id:
                 with cls._lock:
                     # Find and update existing step instead of adding a new one
@@ -131,6 +134,7 @@ class ThinkingTracker:
                         existing_step.timestamp = time.time()  # Update timestamp
                         
                         print(f"Updated existing step with ID {step_id} instead of adding a new one")
+                        print("Before checking for WebSocket callback (update path)")
                         
                         # Send update via WebSocket if callback registered
                         if session_id in cls._ws_send_callbacks:
@@ -142,11 +146,14 @@ class ThinkingTracker:
                                     "logs": cls.get_logs(session_id),
                                     "updated": True  # Flag to indicate this is an update
                                 }
-                                print(f"Sending incremental update for existing step via WebSocket")
+                                print(f"Attempting to send incremental update for existing step via WebSocket")
                                 asyncio.create_task(cls._ws_send_callbacks[session_id](json.dumps(message_data)))
+                                print(f"WebSocket task created for existing step update")
                             except Exception as e:
                                 print(f"Error sending WebSocket update: {str(e)}")
+                        print("After checking for WebSocket callback (update path)")
                         
+                        print(f"--- EXITING add_thinking_step (updated existing step) for session {session_id} ---") # Exit log (update path)
                         return
         
         # If we reach here, it's a new step or doesn't have a step_id for deduplication
@@ -154,12 +161,15 @@ class ThinkingTracker:
         step = ThinkingStep(message, step_type, details)
         
         # Add step to the in-memory storage
+        print("Acquiring lock for new step...")
         with cls._lock:
+            print("Lock acquired for new step.")
             if session_id not in cls._session_steps:
                 cls._session_steps[session_id] = []
                 
             cls._session_steps[session_id].append(step)
             print(f"Session {session_id} now has {len(cls._session_steps[session_id])} thinking steps")
+            print("Releasing lock after adding new step.")
             
             # Save to database
             try:
@@ -171,10 +181,12 @@ class ThinkingTracker:
                         "timestamp": step.timestamp
                     }
                 ])
+                print("Successfully saved thinking step to database.")
             except Exception as e:
                 print(f"Error saving thinking step to database: {str(e)}")
             
             # Try to extract step numbers from message for progress
+            print("Attempting to update progress from message...")
             try:
                 match = re.search(r'Step (\d+)/(\d+):', message)
                 if match:
@@ -183,9 +195,12 @@ class ThinkingTracker:
                     progress = (current_step / total_steps) * 100
                     cls._session_progress[session_id] = progress
             except Exception as e:
-                print(f"Error updating progress: {str(e)}")
+                print(f"Non-critical error updating progress: {str(e)}")
+            print("Finished attempting progress update.")
             
             # Send update via WebSocket if callback registered
+            print("Before checking for WebSocket callback (new step path)")
+            ws_sent = False # Flag to track if WS send was attempted
             if session_id in cls._ws_send_callbacks:
                 try:
                     # Only send the new step, not all steps
@@ -199,12 +214,24 @@ class ThinkingTracker:
                     }
                     
                     # Log the message type for debugging
-                    print(f"Sending incremental update with latest step via WebSocket")
+                    callback_func = cls._ws_send_callbacks[session_id] # Get the callback
+                    print(f"Callback function found: {callback_func!r}") # Log the callback
+                    print(f"Attempting to send incremental update with latest step via WebSocket")
                     
                     # Send the message
-                    asyncio.create_task(cls._ws_send_callbacks[session_id](json.dumps(message_data)))
+                    # Add specific try/except around create_task
+                    try:
+                        task = asyncio.create_task(callback_func(json.dumps(message_data)))
+                        print(f"WebSocket task created: {task!r}") # Log the created task object
+                        ws_sent = True
+                    except Exception as task_creation_error:
+                        print(f"!!!!! EXCEPTION during asyncio.create_task for WebSocket: {task_creation_error}")
+                        logger.error(f"!!!!! EXCEPTION during asyncio.create_task for WebSocket in session {session_id}: {task_creation_error}", exc_info=True)
+
                 except Exception as e:
                     print(f"Error sending WebSocket update: {str(e)}")
+            print(f"After checking for WebSocket callback (new step path). WS sent: {ws_sent}")
+        print(f"--- EXITING add_thinking_step (added new step) for session {session_id} ---") # Exit log (new step path)
 
     @classmethod
     def add_communication(cls, session_id: str, direction: str, content: str) -> None:
@@ -409,6 +436,47 @@ class ThinkingTracker:
             if session_id not in cls._session_logs:
                 return []
             return cls._session_logs[session_id][start_index:]
+
+    @classmethod
+    def get_full_state(cls, session_id: str) -> Dict[str, Any]:
+        """Get the complete current state for a session."""
+        print(f"--- Getting full state for session {session_id} ---")
+        with cls._lock:
+            # Ensure steps are loaded if not already in memory (e.g., on reconnect)
+            cls._load_steps_if_needed(session_id)
+            
+            state = {
+                "status": cls.get_status(session_id),
+                "thinking_steps": cls.get_thinking_steps(session_id), # Send all steps initially
+                "progress": cls.get_progress(session_id),
+                "logs": cls.get_logs(session_id),
+            }
+        print(f"--- Full state retrieved for session {session_id} ---")
+        return state
+
+    @classmethod
+    def _load_steps_if_needed(cls, session_id: str) -> None:
+        """Load thinking steps from storage if not already in memory."""
+        # Check if steps are already loaded or if storage is not configured
+        if session_id in cls._session_steps or not hasattr(cls, '_storage') or cls._storage is None:
+            return
+
+        print(f"--- Steps for session {session_id} not in memory. Attempting to load from storage. ---")
+        try:
+            loaded_steps_data = cls._storage.load_thinking_steps(session_id)
+            if loaded_steps_data:
+                # Convert loaded data back to ThinkingStep objects
+                cls._session_steps[session_id] = [
+                    ThinkingStep(step_data['message'], step_data['type'], step_data.get('details'), step_data['timestamp'])
+                    for step_data in loaded_steps_data
+                ]
+                print(f"--- Successfully loaded {len(cls._session_steps[session_id])} steps for session {session_id} from storage. ---")
+            else:
+                print(f"--- No steps found in storage for session {session_id}. ---")
+        except Exception as e:
+            print(f"!!!!! EXCEPTION during _load_steps_if_needed for session {session_id}: {e}")
+            # Optionally initialize empty list to prevent repeated load attempts
+            cls._session_steps[session_id] = []
 
 
 # 预定义的思考步骤模板

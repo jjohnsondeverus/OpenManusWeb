@@ -1,6 +1,11 @@
 from flask import Blueprint, jsonify
+import json
+import asyncio
+from fastapi import WebSocket, WebSocketDisconnect
 
+from app.web.app import app
 from ..utils.log_monitor import LogFileMonitor
+from app.web.thinking_tracker import ThinkingTracker
 
 
 api_bp = Blueprint("api", __name__)
