@@ -84,11 +84,11 @@ class ThinkingTracker:
             cls._session_logs[session_id] = []
 
             # Save initial session to database
-            if prompt:
+            if prompt is not None:
+                session_data = {"prompt": prompt, "status": TaskStatus.THINKING.value}
                 cls._storage.save_session(
                     session_id=session_id,
-                    prompt=prompt,
-                    status=TaskStatus.THINKING.value
+                    session_data=session_data
                 )
 
     @classmethod
@@ -311,8 +311,12 @@ class ThinkingTracker:
                 cls._storage.save_thinking_steps(session_id, [step.to_dict()])
                 cls._storage.save_session(
                     session_id=session_id,
-                    prompt="",  # We don't have access to the original prompt here
-                    status=TaskStatus.COMPLETED.value
+                    session_data={
+                        "status": TaskStatus.COMPLETED.value,
+                        "thinking_steps": [],
+                        "progress": cls.get_progress(session_id),
+                        "logs": cls.get_logs(session_id),
+                    }
                 )
 
                 # Send update through WebSocket if callback is registered
@@ -343,8 +347,12 @@ class ThinkingTracker:
                 cls._storage.save_thinking_steps(session_id, [step.to_dict()])
                 cls._storage.save_session(
                     session_id=session_id,
-                    prompt="",  # We don't have access to the original prompt here
-                    status=TaskStatus.ERROR.value
+                    session_data={
+                        "status": TaskStatus.ERROR.value,
+                        "thinking_steps": [],
+                        "progress": cls.get_progress(session_id),
+                        "logs": cls.get_logs(session_id),
+                    }
                 )
 
     @classmethod
@@ -356,8 +364,12 @@ class ThinkingTracker:
                 # Update status in database
                 cls._storage.save_session(
                     session_id=session_id,
-                    prompt="",  # We don't have access to the original prompt here
-                    status=TaskStatus.STOPPED.value
+                    session_data={
+                        "status": TaskStatus.STOPPED.value,
+                        "thinking_steps": [],
+                        "progress": cls.get_progress(session_id),
+                        "logs": cls.get_logs(session_id),
+                    }
                 )
 
     @classmethod

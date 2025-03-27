@@ -624,7 +624,7 @@ async def process_prompt(session_id: str, prompt: str):
                 "session_id": session_id,
                 "prompt": prompt,
                 "result": result,
-                "thinking_steps": ThinkingTracker.get_all_thinking_steps(session_id),
+                "thinking_steps": ThinkingTracker.get_thinking_steps(session_id),
                 "logs": get_logs(session_id),
                 "workspace": str(workspace_dir),
                 "timestamp": time.time()

@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, List, Literal, Optional, Union
+from typing import Any, List, Literal, Optional, Union, TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
@@ -133,3 +133,34 @@ class Memory(BaseModel):
     def to_dict_list(self) -> List[dict]:
         """Convert messages to list of dicts"""
         return [msg.to_dict() for msg in self.messages]
+
+
+class ChatCompletionMessage(BaseModel):
+    """Schema for chat completion messages."""
+    role: str
+    content: Optional[str] = None
+    tool_calls: Optional[List[dict]] = None
+
+
+class ChatCompletionResult(BaseModel):
+    """Schema for chat completion result."""
+    choices: List[ChatCompletionMessage]
+
+
+class MessageRole(str, Enum):
+    """Message roles for chat interactions."""
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
+if TYPE_CHECKING:
+    __all__ = [
+        "Message",
+        "AgentState",
+        "MessageRole",
+        "ChatCompletionResult",
+        "ToolCall",
+        "ToolCallMessage",
+    ]

@@ -70,21 +70,26 @@ class SessionStorage:
         conn.commit()
         conn.close()
     
-    def save_session(self, session_id: str, prompt: str, title: Optional[str] = None, 
-                    workspace: Optional[str] = None, status: str = "completed"):
+    def save_session(self, session_id: str, session_data: Dict[str, Any]):
         """Save session metadata."""
         conn = sqlite3.connect(str(self.db_path))
         cursor = conn.cursor()
         
+        # Extract data from session_data dict
+        prompt = session_data.get("prompt")
+        title = session_data.get("title", f"Session {session_id[:8]}")
+        workspace = session_data.get("workspace")
+        status = session_data.get("status", "completed")
+
         cursor.execute(
             "INSERT OR REPLACE INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
             (
                 session_id, 
-                title or f"Session {session_id[:8]}", 
+                title,
                 prompt,
                 workspace,
-                time.time(),
-                status
+                time.time(), # created_at
+                status,
             )
         )
         

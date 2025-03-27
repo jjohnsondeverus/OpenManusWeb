@@ -16,7 +16,7 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_i
 
 from app.config import LLMSettings, config
 from app.logger import logger  # Assuming a logger is set up in your app
-from app.schema import Message
+from app.schema import Message, ChatCompletionResult
 
 
 class LLM:
@@ -210,7 +210,7 @@ class LLM:
         tool_choice: Literal["none", "auto", "required"] = "auto",
         temperature: Optional[float] = None,
         **kwargs,
-    ):
+    ) -> ChatCompletionResult:
         """
         Ask LLM using functions/tools and return the response.
 
@@ -224,7 +224,7 @@ class LLM:
             **kwargs: Additional completion arguments
 
         Returns:
-            ChatCompletionMessage: The model's response
+            ChatCompletionResult: The model's response
 
         Raises:
             ValueError: If tools, tool_choice, or messages are invalid
@@ -295,3 +295,39 @@ class LLM:
         except Exception as e:
             logger.error(f"Unexpected error in ask_tool: {e}")
             raise
+
+    async def _chat_completion(
+        self,
+        messages: List[Union[dict, Message]],
+        model_name: str,
+        **kwargs,
+    ) -> ChatCompletionResult:
+        """
+        Handles chat completion with retry logic for rate limiting and other transient errors.
+        """
+        max_retries = kwargs.get('max_retries', 5)
+        initial_retry_delay = kwargs.get('initial_retry_delay', 1)
+        max_retry_delay = kwargs.get('max_retry_delay', 10)
+
+        for attempt in range(max_retries):
+            try:
+                response = await self.client.chat.completions.create(
+                    model=model_name,
+                    messages=messages,
+                    **kwargs,
+                )
+                return response
+            except RateLimitError as e:
+                if attempt < max_retries - 1:
+                    # Exponential backoff: delay = initial_delay * (2^attempt)
+                    retry_delay = min(initial_retry_delay * (2**attempt), max_retry_delay)
+                    logger.warning(f"Rate limited, retrying in {retry_delay:.2f} seconds... (Attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_delay)
+                else:
+                    logger.error(f"Max retries reached for chat completion after rate limits. Last error: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"Exception during chat completion (attempt {attempt + 1}/{max_retries}): {e}")
+            except Exception as e:
+                logger.error(f"Error during chat completion: {e}")
+                raise

@@ -24,6 +24,9 @@ class PlanningFlow(BaseFlow):
     executor_keys: List[str] = Field(default_factory=list)
     active_plan_id: str = Field(default_factory=lambda: f"plan_{int(time.time())}")
     current_step_index: Optional[int] = None
+    auto_step_index: int = Field(default=0)
+    session_id: str = Field(default_factory=lambda: f"session_{int(time.time())}")
+    max_steps: int = Field(default=20)
 
     def __init__(
         self, agents: Union[BaseAgent, List[BaseAgent], Dict[str, BaseAgent]], **data
@@ -44,9 +47,16 @@ class PlanningFlow(BaseFlow):
         # Call parent's init with the processed data
         super().__init__(agents, **data)
 
+        # Store session_id
+        self.session_id = self.session_id
+
         # Set executor_keys to all agent keys if not specified
         if not self.executor_keys:
             self.executor_keys = list(self.agents.keys())
+
+        # Set max_steps to the provided value or default to 20
+        self.max_steps = data.get("max_steps", 20)
+        self.auto_step_index = data.get("auto_step_index", 0)
 
     def get_executor(self, step_type: Optional[str] = None) -> BaseAgent:
         """
@@ -72,10 +82,13 @@ class PlanningFlow(BaseFlow):
         job_id: Optional[str] = None,
         cancel_event: Optional[asyncio.Event] = None,
     ) -> str:
+        """Execute the flow with the given input text."""
+        # Add a delay at the very start of execution to mitigate initial rate limits
+        await asyncio.sleep(5)  # Try a 5-second initial delay (adjust as needed)
+
         print("Entering PlanningFlow.execute method") # Entry log
         print(f"Input text received: {input_text[:50]}...") # Log input text
 
-        """Execute the planning flow with agents."""
         session_id = job_id or self.active_plan_id
         try:
             if not self.primary_agent:
@@ -176,6 +189,9 @@ class PlanningFlow(BaseFlow):
                         print("Executor requested termination")
                         break
                     print("AFTER _execute_step()") # Log after _execute_step
+
+                    # Add a delay between steps
+                    await asyncio.sleep(2)
             except Exception as loop_e: # Capture loop exceptions separately
                 print(f"Exception INSIDE execution loop: {str(loop_e)}")
                 logger.error(f"Exception INSIDE execution loop: {str(loop_e)}")
@@ -446,6 +462,8 @@ class PlanningFlow(BaseFlow):
             await self._mark_step_completed(self.current_step_index, self.active_plan_id)
             print(f"AFTER _mark_step_completed() - Step Index: {self.current_step_index}") # Added log after _mark_step_completed
 
+            # Add a delay after each step to mitigate rate limits
+            await asyncio.sleep(2)  # 2-second delay between steps (adjust as needed)
 
             # Add completion thinking step with more detailed information
             completion_step_details = None
@@ -535,3 +553,12 @@ class PlanningFlow(BaseFlow):
             logger.error(f"Error calling mark_step_completed on flow's planning_tool for plan {plan_id}: {e}", exc_info=True)
             # Optionally add a thinking step for this error
             ThinkingTracker.add_thinking_step(self.session_id, f"Internal error: Failed to mark step {step_index+1} as completed. Error: {e}", details={"error": str(e)})
+
+    async def _finalize_plan(self) -> str:
+        """Finalize the plan execution and return a summary."""
+        final_message = "Plan execution completed successfully.\n\n"
+        # Optionally, you can add more details here, like a summary of the plan,
+        # or aggregate results from steps if needed.
+        ThinkingTracker.add_thinking_step(self.session_id, "Plan finalized and completed.", "conclusion")
+        logger.info("Plan execution finalized.")
+        return final_message
