@@ -1,42 +1,59 @@
-# System Patterns for OpenManusWeb
+---
+description: System architecture, key technical decisions, design patterns
+globs: memory-bank/systemPatterns.md
+alwaysApply: true
+---
+# System Patterns: OpenManus Web - AI Agent Platform
 
-## 1. System Architecture
+**System Architecture:**
 
-OpenManusWeb employs a client-server architecture:
-- **Backend**: A Python-based server built with FastAPI handles API requests, WebSocket communication, and agent execution logic.
-- **Frontend**: A vanilla HTML/CSS/JavaScript client provides the user interface, interacting with the backend via WebSockets.
+The OpenManus Web platform follows a layered architecture:
 
-## 2. Key Backend Components
+1.  **Frontend (Web UI):**
+    *   Built with HTML, CSS, and JavaScript.
+    *   Provides the user interface for interacting with the AI agent platform.
+    *   Uses WebSockets for real-time communication with the backend to receive updates on task progress and agent thinking steps.
+    *   Located in `app/web/static` and `app/web/templates`.
 
-- **`app.py`**: The main FastAPI application entry point, defining routes and WebSocket handlers.
-- **`thinking_tracker.py`**: A core component responsible for capturing, managing, and transmitting AI thinking steps. Uses a step ID system for deduplication and updates.
-- **`session_storage.py`**: Manages session persistence, currently using SQLite.
-- **`log_handler.py`**: Handles application logging.
-- **Agent System (`app/agent/`)**: Contains base agent classes and specific implementations (e.g., `manus.py`, `toolcall.py`).
-- **Flow Controllers (`app/flow/`)**: Manages the execution flow of agents (e.g., `planning.py`).
+2.  **Backend (API Server):**
+    *   Built with FastAPI (Python).
+    *   Provides REST API endpoints for handling user requests (e.g., starting sessions, getting thinking steps, progress updates).
+    *   Manages AI agent sessions, workflow execution, and tool orchestration.
+    *   Handles WebSocket connections for real-time updates to the frontend.
+    *   Located in `app/web/app.py` and related files in `app/web/`.
 
-## 3. Key Frontend Components (`app/web/static/`)
+3.  **AI Agent Core:**
+    *   Contains the core logic for AI agents, including agent classes (e.g., `Manus`), planning flows (`PlanningFlow`), and tool management (`ToolCollection`).
+    *   Responsible for interpreting user prompts, creating plans, executing steps, and interacting with LLMs and tools.
+    *   Located in `app/agent/`, `app/flow/`, and `app/tool/`.
 
-- **`connected_interface.js`**: Coordinates the overall frontend interface logic.
-- **`connected_websocketManager.js`**: Manages the WebSocket connection and message handling.
-- **`connected_thinkingManager.js`**: Renders the AI thinking timeline based on WebSocket updates.
-- **`connected_chatManager.js`**: Handles the chat interface logic.
-- **`connected_fileViewerManager.js`**: Manages the display of files.
-- **`xterm.js`**: Used for terminal emulation in the right panel.
+4.  **Large Language Model (LLM) Abstraction Layer:**
+    *   Provides an abstraction layer for interacting with different LLM providers (currently Anthropic).
+    *   Handles API calls to the LLM, manages rate limits, and formats requests and responses.
+    *   Located in `app/llm.py`.
 
-## 4. Communication Flow
+5.  **Tools:**
+    *   A collection of tools that extend the capabilities of AI agents (e.g., `file_saver`, `python_execute`, `web_search`, `planning`).
+    *   Tools are modular and can be added or modified to enhance agent functionality.
+    *   Located in `app/tool/`.
 
-- User interaction (e.g., sending a chat message) triggers a WebSocket message to the backend.
-- The backend processes the request, potentially invoking an AI agent.
-- The agent executes, using tools and generating thinking steps.
-- `ThinkingTracker` captures these steps.
-- Incremental updates (new steps or updates to existing steps) are sent to the frontend via WebSocket.
-- The frontend (`connected_websocketManager.js`) receives updates and delegates rendering to relevant managers (e.g., `connected_thinkingManager.js`, terminal display).
+6.  **Session Storage:**
+    *   Uses a SQLite database (`sessions.db`) to persist session data, thinking steps, and logs.
+    *   Provides session management and replay capabilities.
+    *   Located in `app/web/session_storage.py`.
 
-## 5. Critical Design Decisions
+**Key Technical Decisions and Patterns:**
 
-- **Step Deduplication**: Uses step IDs to avoid duplicate entries in the timeline and allow for updates to existing steps. Adds complexity but improves timeline accuracy.
-- **Incremental WebSocket Updates**: Sends only changes rather than the full state to reduce network traffic and improve performance. Requires more complex state management.
-- **SQLite for Session Storage**: Chosen for simplicity and zero external dependencies, sacrificing scalability.
-- **Vanilla JavaScript Frontend**: Selected to reduce initial complexity and dependencies, potentially leading to less structured code compared to using a framework.
-- **Two-Pane Layout**: Adopted from the commercial Manus AI product for clear separation of concerns (chat/thinking vs. execution output).
+*   **Asynchronous Architecture:**  Utilizes `asyncio` throughout the backend for handling concurrent requests and non-blocking operations, crucial for efficient LLM interactions and real-time updates.
+*   **FastAPI for Backend:**  Chosen for its performance, ease of use, automatic data validation, and built-in support for asynchronous operations and WebSockets.
+*   **Modular Tool Design:** Tools are designed as independent modules, making it easy to add, modify, and manage agent capabilities.
+*   **Planning Flow for Complex Tasks:**  Employs a `PlanningFlow` to break down complex user prompts into manageable steps, enabling agents to handle more sophisticated tasks.
+*   **Thinking Step Tracking:** Implemented a "thinking step" tracking system to provide transparency into the agent's reasoning process and task execution.
+*   **Rate Limit Handling Strategy:**  Adopted a multi-pronged approach to rate limit mitigation, including switching to Anthropic, increasing retries with exponential backoff, and adding delays between steps.
+*   **Configuration via `config.toml`:**  Uses a `config.toml` file for centralized configuration of LLM settings, browser options, and other application parameters.
+
+**Design Patterns:**
+
+*   **Factory Pattern:**  `FlowFactory` is used to create different types of execution flows (currently only `PlanningFlow`).
+*   **Strategy Pattern:**  Agents can be seen as strategies for executing different types of steps within a plan.
+*   **Observer Pattern (Implicit):**  The WebSocket communication for real-time updates can be seen as an implicit observer pattern, where the frontend observes changes in the backend session state.

@@ -32,6 +32,10 @@ from app.web.session_storage import SessionStorage
 from app.llm import LLM
 from app.tool import ToolCollection, PlanningTool
 
+# Configure logging to DEBUG level
+logging.basicConfig(level=logging.DEBUG)
+
+logger = logging.getLogger(__name__)
 
 # 控制是否自动打开浏览器 (读取环境变量，默认为True)
 AUTO_OPEN_BROWSER = os.environ.get("AUTO_OPEN_BROWSER", "1") == "1"
@@ -304,8 +308,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
     # Register the WebSocket send callback for this session
     print(f"Registering WebSocket callback for session {session_id} (in app.py)...") # Log before registration
+    tracker = ThinkingTracker.get_tracker(session_id)
+    tracker.websocket = websocket
     ThinkingTracker.register_ws_send_callback(session_id, websocket.send_text)
-    print(f"WebSocket callback registered for session {session_id} (in app.py).") # Log after registration
+    logger.debug(f"WebSocket in websocket_endpoint: {tracker.websocket} for session {session_id}") # Debug log here
+    logger.info(f"WebSocket callback registered for session {session_id} (in app.py).")
 
     try:
         # Send initial state immediately upon connection
@@ -380,7 +387,7 @@ class LLMCommunicationTracker:
         """包装LLM的completion方法以捕获输入和输出"""
         session_id = self.session_id
 
-        async def wrapped_completion(*args, **kwargs):
+        def wrapped_completion(*args, **kwargs):
             # 记录输入
             prompt = kwargs.get("prompt", "")
             if not prompt and args:
@@ -393,7 +400,7 @@ class LLMCommunicationTracker:
                 )
 
             # 调用原始方法
-            result = await original_method(*args, **kwargs)
+            result = original_method(*args, **kwargs)
 
             # 记录输出
             if result:

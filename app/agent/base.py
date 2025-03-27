@@ -112,13 +112,14 @@ class BaseAgent(BaseModel, ABC):
         self.memory.add_message(msg)
 
     async def run(
-        self, request: Optional[str] = None, cancel_event: asyncio.Event = None
+        self, request: Optional[str] = None, cancel_event: asyncio.Event = None, session_id: Optional[str] = None
     ) -> str:
         """Execute the agent's main loop asynchronously.
 
         Args:
             request: Optional initial user request to process.
             cancel_event: Optional asyncio event to signal cancellation.
+            session_id: Optional session ID for the execution.
 
         Returns:
             A string summarizing the execution results.
@@ -154,6 +155,7 @@ class BaseAgent(BaseModel, ABC):
             if self.current_step >= self.max_steps:
                 results.append(f"Terminated: Reached max steps ({self.max_steps})")
 
+        self.session_id = session_id
         return "\n".join(results) if results else "No steps executed"
 
     @abstractmethod

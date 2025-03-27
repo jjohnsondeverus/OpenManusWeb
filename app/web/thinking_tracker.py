@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional
 import re
 
 from app.web.session_storage import SessionStorage
+from fastapi import WebSocket
+from app.logger import logger
 
 
 # 全局思考步骤存储
@@ -55,15 +57,29 @@ class ThinkingTracker:
     _ws_send_callbacks: Dict[str, Any] = {}  # 存储WebSocket发送回调函数
     _lock = threading.RLock()
     _storage = SessionStorage()  # Initialize database storage
+    _instances = {}
+
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.thinking_steps: List[dict] = []
+        self.websocket: Optional[WebSocket] = None
+        self.current_thinking_step_id: Optional[int] = None
 
     @classmethod
-    def register_ws_send_callback(cls, session_id: str, callback: Any) -> None:
+    def get_tracker(cls, session_id: str) -> "ThinkingTracker":
+        with cls._lock:
+            if session_id not in cls._instances:
+                cls._instances[session_id] = cls(session_id)
+            return cls._instances[session_id]
+
+    @classmethod
+    def register_ws_send_callback(cls, session_id: str, callback: Any):
         """注册WebSocket发送回调函数"""
         with cls._lock:
             cls._ws_send_callbacks[session_id] = callback
 
     @classmethod
-    def unregister_ws_send_callback(cls, session_id: str) -> None:
+    def unregister_ws_send_callback(cls, session_id: str):
         """取消注册WebSocket发送回调函数"""
         with cls._lock:
             if session_id in cls._ws_send_callbacks:
@@ -92,146 +108,165 @@ class ThinkingTracker:
                 )
 
     @classmethod
-    def add_thinking_step(
-        cls, session_id: str, message: str, step_type: str = "thinking", details: dict = None
-    ) -> None:
-        """Add a thinking step to the session."""
-        print(f"--- ENTERING add_thinking_step for session {session_id} ---") # Entry log
-        print(f"Adding thinking step to session {session_id}: {message}")
-        print(f"Details received: {details!r}") # Log details
-        
-        if session_id not in cls._session_steps:
-            print(f"Starting tracking for session {session_id} (it wasn't tracked before)")
-            cls.start_tracking(session_id)
-            
-        # Check for duplicates to avoid redundant steps
-        step_id = None
-        if details and isinstance(details, dict) and 'step_id' in details:
-            step_id = details['step_id']
-            print(f"Step has ID: {step_id}")
-            
-            # Only try to find existing steps if we have a step_id
-            print(f"Attempting to find existing step with ID: {step_id}")
-            if step_id:
-                with cls._lock:
-                    # Find and update existing step instead of adding a new one
-                    existing_step_index = None
-                    for i, step in enumerate(cls._session_steps[session_id]):
-                        if (hasattr(step, 'details') and step.details and 
-                            isinstance(step.details, dict) and 
-                            'step_id' in step.details and 
-                            step.details['step_id'] == step_id):
-                            
-                            existing_step_index = i
-                            print(f"Found existing step with ID {step_id} at index {i}")
-                            break
-                    
-                    if existing_step_index is not None:
-                        # Update existing step instead of adding a new one
-                        existing_step = cls._session_steps[session_id][existing_step_index]
-                        existing_step.message = message
-                        existing_step.details = details
-                        existing_step.timestamp = time.time()  # Update timestamp
-                        
-                        print(f"Updated existing step with ID {step_id} instead of adding a new one")
-                        print("Before checking for WebSocket callback (update path)")
-                        
-                        # Send update via WebSocket if callback registered
-                        if session_id in cls._ws_send_callbacks:
-                            try:
-                                message_data = {
-                                    "status": cls.get_status(session_id),
-                                    "thinking_steps": [existing_step.to_dict()],
-                                    "progress": cls.get_progress(session_id),
-                                    "logs": cls.get_logs(session_id),
-                                    "updated": True  # Flag to indicate this is an update
-                                }
-                                print(f"Attempting to send incremental update for existing step via WebSocket")
-                                asyncio.create_task(cls._ws_send_callbacks[session_id](json.dumps(message_data)))
-                                print(f"WebSocket task created for existing step update")
-                            except Exception as e:
-                                print(f"Error sending WebSocket update: {str(e)}")
-                        print("After checking for WebSocket callback (update path)")
-                        
-                        print(f"--- EXITING add_thinking_step (updated existing step) for session {session_id} ---") # Exit log (update path)
-                        return
-        
-        # If we reach here, it's a new step or doesn't have a step_id for deduplication
-        print(f"Creating new step for message: {message[:50]}...")
-        step = ThinkingStep(message, step_type, details)
-        
-        # Add step to the in-memory storage
-        print("Acquiring lock for new step...")
+    def stop_tracking(cls, session_id: str):
         with cls._lock:
-            print("Lock acquired for new step.")
-            if session_id not in cls._session_steps:
-                cls._session_steps[session_id] = []
-                
-            cls._session_steps[session_id].append(step)
-            print(f"Session {session_id} now has {len(cls._session_steps[session_id])} thinking steps")
-            print("Releasing lock after adding new step.")
-            
-            # Save to database
-            try:
-                cls._storage.save_thinking_steps(session_id, [
-                    {
-                        "message": step.message,
-                        "type": step.step_type,
-                        "details": step.details,
-                        "timestamp": step.timestamp
-                    }
-                ])
-                print("Successfully saved thinking step to database.")
-            except Exception as e:
-                print(f"Error saving thinking step to database: {str(e)}")
-            
-            # Try to extract step numbers from message for progress
-            print("Attempting to update progress from message...")
-            try:
-                match = re.search(r'Step (\d+)/(\d+):', message)
-                if match:
-                    current_step = int(match.group(1))
-                    total_steps = int(match.group(2))
-                    progress = (current_step / total_steps) * 100
-                    cls._session_progress[session_id] = progress
-            except Exception as e:
-                print(f"Non-critical error updating progress: {str(e)}")
-            print("Finished attempting progress update.")
-            
-            # Send update via WebSocket if callback registered
-            print("Before checking for WebSocket callback (new step path)")
-            ws_sent = False # Flag to track if WS send was attempted
-            if session_id in cls._ws_send_callbacks:
-                try:
-                    # Only send the new step, not all steps
-                    # This prevents duplicate data and reduces network traffic
-                    message_data = {
-                        "status": cls.get_status(session_id),
-                        "thinking_steps": [step.to_dict()],  # Just send the latest step
-                        "progress": cls.get_progress(session_id),
-                        "logs": cls.get_logs(session_id),
-                        "updated": False  # Flag to indicate this is a new step
-                    }
-                    
-                    # Log the message type for debugging
-                    callback_func = cls._ws_send_callbacks[session_id] # Get the callback
-                    print(f"Callback function found: {callback_func!r}") # Log the callback
-                    print(f"Attempting to send incremental update with latest step via WebSocket")
-                    
-                    # Send the message
-                    # Add specific try/except around create_task
-                    try:
-                        task = asyncio.create_task(callback_func(json.dumps(message_data)))
-                        print(f"WebSocket task created: {task!r}") # Log the created task object
-                        ws_sent = True
-                    except Exception as task_creation_error:
-                        print(f"!!!!! EXCEPTION during asyncio.create_task for WebSocket: {task_creation_error}")
-                        logger.error(f"!!!!! EXCEPTION during asyncio.create_task for WebSocket in session {session_id}: {task_creation_error}", exc_info=True)
+            if session_id in cls._instances:
+                del cls._instances[session_id]
+        logger.info(f"Thinking tracking stopped for session: {session_id}")
 
+    @classmethod
+    def set_websocket(cls, session_id: str, websocket: WebSocket):
+        tracker = cls.get_tracker(session_id)
+        tracker.websocket = websocket
+        logger.info(f"WebSocket set for session: {session_id}")
+
+    @classmethod
+    def clear_steps(cls, session_id: str):
+        tracker = cls.get_tracker(session_id)
+        tracker.thinking_steps = []
+        logger.info(f"Thinking steps cleared for session: {session_id}")
+
+    @classmethod
+    async def add_thinking_step(cls, session_id: str, message: str, step_type: str = "thinking", details: Optional[dict] = None, return_step=False):
+        logger.debug(f"ENTERING add_thinking_step for session {session_id} - Message: {message[:50]}...")
+        logger.debug(f"WebSocket in add_thinking_step: {ThinkingTracker.get_tracker(session_id).websocket} for session {session_id}") # Debug log here
+        tracker = cls.get_tracker(session_id)
+
+        # Check for duplicate message content within a short time frame
+        if tracker.thinking_steps and tracker.thinking_steps[-1]['message'] == message:
+            logger.debug(f"Duplicate thinking step message detected, skipping add: {message[:50]}...")
+            return None  # Skip adding duplicate step
+
+        step_data = {
+            "message": message,
+            "type": step_type,
+            "details": details or {},
+            "timestamp": time.time()
+        }
+        tracker.thinking_steps.append(step_data)
+
+        # Save to database using the global 'storage' instance
+        cls._storage.save_thinking_steps(session_id, [step_data]) # Save step data using SessionStorage
+        step_id = None # We don't have a DB step ID in this setup anymore.
+        tracker.current_thinking_step_id = step_id # Track current step ID
+
+        logger.info(f"--- ENTERING add_thinking_step for session {session_id} ---")
+        logger.info(f"Adding thinking step to session {session_id}: {message[:100]}...")
+        logger.debug(f"Details received: {details}")
+        logger.debug(f"Creating new step for message: {message[:50]}...")
+        logger.debug(f"Acquiring lock for new step...")
+
+        logger.debug(f"Lock acquired for new step.")
+        logger.debug(f"Session {session_id} now has {len(tracker.thinking_steps)} thinking steps")
+        logger.debug(f"Releasing lock after adding new step.")
+
+        logger.debug(f"Successfully saved thinking step to database.")
+        logger.debug(f"Attempting to update progress from message...")
+        logger.debug(f"Finished attempting progress update.")
+
+        # Send incremental update via WebSocket
+        if tracker.websocket:
+            logger.debug(f"Before checking for WebSocket callback (new step path)")
+            payload = None # Initialize payload here
+            if tracker.websocket.send_text:
+                logger.debug(f"Callback function found: {tracker.websocket.send_text}")
+                try:
+                    payload = {
+                        "type": "thinking_steps",
+                        "session_id": session_id,
+                        "log_message": "DEBUG: Sending thinking_steps payload via WebSocket",
+                        "payload_content": payload,
+                        "thinking_steps": [step_data], # Send only the new step
+                        "step_id": step_id # step_id might be None now
+                    }
+                    logger.debug(f"Attempting to send incremental update with latest step via WebSocket")
+                    ws_task = asyncio.create_task(tracker.websocket.send_text(json.dumps(payload)))
+                    logger.debug(f"WebSocket task created: {ws_task}")
+                    await ws_task # Await the task here
+                    logger.debug(f"After awaiting WebSocket task completion")
+                    logger.debug(f"After checking for WebSocket callback (new step path). WS sent: True")
                 except Exception as e:
-                    print(f"Error sending WebSocket update: {str(e)}")
-            print(f"After checking for WebSocket callback (new step path). WS sent: {ws_sent}")
-        print(f"--- EXITING add_thinking_step (added new step) for session {session_id} ---") # Exit log (new step path)
+                    logger.error(f"Error sending thinking step via WebSocket: {e}")
+            else:
+                logger.warning("WebSocket send_text callback is not available.")
+                logger.debug(f"After checking for WebSocket callback (new step path). WS sent: False")
+        else:
+            logger.warning("WebSocket is not set for session, cannot send thinking step update.")
+            logger.debug(f"After checking for WebSocket callback (new step path). WS sent: False")
+        logger.info(f"--- EXITING add_thinking_step (added new step) for session {session_id} ---")
+
+        if return_step:
+            # We are not returning DB step anymore, consider what to return if needed.
+            # For now, returning None as we removed DB step.
+            return None
+        return None
+
+    @classmethod
+    async def add_terminal_output(cls, session_id: str, output: str, step_id: Optional[int] = None, tool_name: Optional[str] = None):
+        tracker = cls.get_tracker(session_id)
+        if tracker.websocket:
+            try:
+                payload = {
+                    "type": "terminal_output",
+                    "session_id": session_id,
+                    "terminal_output": [{"output": output, "step_id": step_id, "tool_name": tool_name}]
+                }
+                await asyncio.create_task(tracker.websocket.send_text(json.dumps(payload)))
+            except Exception as e:
+                logger.error(f"Error sending terminal output via WebSocket: {e}")
+        else:
+            logger.warning("WebSocket is not set for session, cannot send terminal output.")
+
+    @classmethod
+    async def send_status_update(cls, session_id: str, status: str, result: Optional[str] = None):
+        tracker = cls.get_tracker(session_id)
+        if tracker.websocket:
+            try:
+                payload = {
+                    "type": "status_update",
+                    "session_id": session_id,
+                    "status": status,
+                    "result": result
+                }
+                await asyncio.create_task(tracker.websocket.send_text(json.dumps(payload)))
+            except Exception as e:
+                logger.error(f"Error sending status update via WebSocket: {e}")
+        else:
+            logger.warning("WebSocket is not set for session, cannot send status update.")
+
+    @classmethod
+    async def send_log_message(cls, session_id: str, level: str, message: str):
+        tracker = cls.get_tracker(session_id)
+        if tracker.websocket:
+            try:
+                payload = {
+                    "type": "log_message",
+                    "session_id": session_id,
+                    "level": level,
+                    "message": message
+                }
+                await asyncio.create_task(tracker.websocket.send_text(json.dumps(payload)))
+            except Exception as e:
+                logger.error(f"Error sending log message via WebSocket: {e}")
+        else:
+            logger.warning("WebSocket is not set for session, cannot send log message.")
+
+    @classmethod
+    async def send_user_input_request(cls, session_id: str, question: str):
+        """Sends a message to the frontend indicating that the agent is requesting user input."""
+        tracker = cls.get_tracker(session_id)
+        if tracker.websocket:
+            try:
+                payload = {
+                    "type": "user_input_request",  # New message type
+                    "session_id": session_id,
+                    "question": question,
+                }
+                await asyncio.create_task(tracker.websocket.send_text(json.dumps(payload)))
+            except Exception as e:
+                logger.error(f"Error sending user input request via WebSocket: {e}")
+        else:
+            logger.warning("WebSocket is not set for session, cannot send user input request.")
 
     @classmethod
     def add_communication(cls, session_id: str, direction: str, content: str) -> None:

@@ -7,6 +7,7 @@ from app.tool.browser_use_tool import BrowserUseTool
 from app.tool.file_saver import FileSaver
 from app.tool.google_search import GoogleSearch
 from app.tool.python_execute import PythonExecute
+from app.web.thinking_tracker import ThinkingTracker
 
 
 class Manus(ToolCallAgent):
@@ -32,3 +33,20 @@ class Manus(ToolCallAgent):
             PythonExecute(), GoogleSearch(), BrowserUseTool(), FileSaver(), Terminate()
         )
     )
+
+    async def ask_user_for_input(self, question: str):
+        """
+        Pauses agent execution and asks the user for input.
+
+        Args:
+            question (str): The question to ask the user.
+        """
+        session_id = self.session_id
+
+        if session_id:
+            ThinkingTracker.send_user_input_request(session_id, question)
+            print(f"💬 [Agent->User] Question sent to user (session {session_id}): {question}")
+
+            print("⏸️ Agent execution paused, waiting for user input...")
+        else:
+            print(f"Warning: No session ID available to ask user a question: {question}")

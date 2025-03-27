@@ -20,56 +20,28 @@ export class ChatManager {
         this.addSystemMessage('Welcome to Manus AI! How can I help you today?');
     }
 
-    addUserMessage(message) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message user-message';
-        
-        const avatar = document.createElement('div');
-        avatar.className = 'message-avatar';
-        avatar.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
-        
-        const content = document.createElement('div');
-        content.className = 'message-content';
-        content.textContent = message;
-        
-        messageDiv.appendChild(avatar);
-        messageDiv.appendChild(content);
-        this.messageContainer.appendChild(messageDiv);
-        
+    addMessage(message, senderClass) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message', senderClass);
+
+        const textElement = document.createElement('p');
+        textElement.textContent = message;
+        messageElement.appendChild(textElement);
+
+        this.messageContainer.appendChild(messageElement);
         this.scrollToBottom();
+    }
+
+    addUserMessage(message) {
+        this.addMessage(message, 'user-message');
     }
 
     addAssistantMessage(message) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message assistant-message';
-        
-        const avatar = document.createElement('div');
-        avatar.className = 'message-avatar';
-        avatar.innerHTML = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>';
-        
-        const content = document.createElement('div');
-        content.className = 'message-content';
-        content.innerHTML = this.formatMessage(message);
-        
-        messageDiv.appendChild(avatar);
-        messageDiv.appendChild(content);
-        this.messageContainer.appendChild(messageDiv);
-        
-        this.scrollToBottom();
+        this.addMessage(message, 'assistant-message');
     }
 
     addSystemMessage(message) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message system-message';
-        
-        const content = document.createElement('div');
-        content.className = 'message-content';
-        content.textContent = message;
-        
-        messageDiv.appendChild(content);
-        this.messageContainer.appendChild(messageDiv);
-        
-        this.scrollToBottom();
+        this.addMessage(message, 'system-message');
     }
 
     formatMessage(message) {
@@ -110,5 +82,9 @@ export class ChatManager {
     clearMessages() {
         this.messageContainer.innerHTML = '';
         this.addSystemMessage('Chat cleared.');
+    }
+
+    addAgentQuestion(question) {
+        this.addMessage(question, 'agent-question');
     }
 }

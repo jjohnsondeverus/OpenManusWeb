@@ -61,7 +61,7 @@ class ToolCallAgent(ReActAgent):
         
         # Add thinking step for agent's thoughts
         if session_id and response.content:
-            ThinkingTracker.add_thinking_step(
+            await ThinkingTracker.add_thinking_step(
                 session_id,
                 f"{self.name}'s thoughts: {response.content[:500] + ('...' if len(response.content or '') > 500 else '')}",
                 "thinking"
@@ -73,7 +73,7 @@ class ToolCallAgent(ReActAgent):
             
             # Add thinking step for tools selection
             if session_id:
-                ThinkingTracker.add_thinking_step(
+                await ThinkingTracker.add_thinking_step(
                     session_id,
                     f"Selected tools: {', '.join(tool_names)}",
                     "action"
@@ -160,7 +160,7 @@ class ToolCallAgent(ReActAgent):
             
             # Add thinking step for tool execution
             if session_id:
-                ThinkingTracker.add_thinking_step(
+                await ThinkingTracker.add_thinking_step(
                     session_id,
                     f"Executing tool: {name}",
                     "action",
@@ -180,7 +180,7 @@ class ToolCallAgent(ReActAgent):
             
             # Add thinking step for tool result
             if session_id:
-                ThinkingTracker.add_thinking_step(
+                await ThinkingTracker.add_thinking_step(
                     session_id,
                     f"Tool '{name}' completed",
                     "result",

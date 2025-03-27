@@ -148,7 +148,6 @@ export class App {
     async sendMessage(message) {
         try {
             // Disable send button and enable stop button
-            document.getElementById('send-btn').disabled = true;
             document.getElementById('stop-btn').disabled = false;
 
             // Clear previous thinking steps
@@ -171,7 +170,7 @@ export class App {
             }
 
             const data = await response.json();
-            
+
             // Connect to WebSocket with session ID
             if (data.session_id) {
                 this.websocketManager.connect(data.session_id);
@@ -239,6 +238,13 @@ export class App {
                         console.log(log.message);
                     }
                 });
+            }
+
+            // Handle user input request messages
+            if (data.type === 'user_input_request') {
+                const question = data.question;
+                console.log('Received user input request from agent:', question);
+                this.chatManager.addAgentQuestion(question);
             }
         } catch (error) {
             console.error('Error handling WebSocket message:', error);

@@ -95,7 +95,7 @@ class PlanningFlow(BaseFlow):
                 raise ValueError("No primary agent available")
 
             # Add initial thinking step for the whole execution
-            ThinkingTracker.add_thinking_step(
+            await ThinkingTracker.add_thinking_step(
                 session_id, 
                 f"Beginning execution of plan for: {input_text[:100]}{'...' if len(input_text) > 100 else ''}",
                 "thinking"
@@ -112,7 +112,7 @@ class PlanningFlow(BaseFlow):
                     # Check if plan creation actually succeeded and returned a result
                     if not plan_result:
                         logger.error(f"Plan creation method returned None or False for session {session_id}.")
-                        ThinkingTracker.add_thinking_step(session_id, "Failed to create initial plan (internal error).", "error")
+                        await ThinkingTracker.add_thinking_step(session_id, "Failed to create initial plan (internal error).", "error")
                         return "Error: Could not create an initial plan."
 
                     # Verify plan exists in the tool's storage (redundant if plan_result is valid, but safe)
@@ -125,7 +125,7 @@ class PlanningFlow(BaseFlow):
                         logger.error(
                             f"Plan creation failed. Plan ID {self.active_plan_id} not found in planning tool."
                         )
-                        ThinkingTracker.add_thinking_step(session_id, f"Failed to create initial plan (plan ID {self.active_plan_id} not found).", "error")
+                        await ThinkingTracker.add_thinking_step(session_id, f"Failed to create initial plan (plan ID {self.active_plan_id} not found).", "error")
                         return f"Failed to create plan for: {input_text}"
                 except Exception as e:
                     print(f"Exception in plan creation: {str(e)}")
@@ -226,7 +226,7 @@ class PlanningFlow(BaseFlow):
         logger.info(f"Creating initial plan with ID: {self.active_plan_id}")
         
         # Add thinking step for plan creation
-        ThinkingTracker.add_thinking_step(
+        await ThinkingTracker.add_thinking_step(
             session_id,
             f"Creating a plan for: {request[:100]}{'...' if len(request) > 100 else ''}",
             "thinking"
@@ -294,7 +294,7 @@ class PlanningFlow(BaseFlow):
                                 steps_text += f"\n...and {len(plan_steps) - 10} more steps"
 
                             print("DEBUG: Before adding 'Created plan' thinking step") # Debug log
-                            ThinkingTracker.add_thinking_step(
+                            await ThinkingTracker.add_thinking_step(
                                 session_id,
                                 f"Created plan: {self.planning_tool.plans[self.active_plan_id].get('title', 'Untitled Plan')}",
                                 "thinking",
@@ -430,7 +430,7 @@ class PlanningFlow(BaseFlow):
                 "status": "in_progress"
             }
 
-        ThinkingTracker.add_thinking_step(
+        await ThinkingTracker.add_thinking_step(
             session_id,
             f"Working on step {self.current_step_index + 1 if self.current_step_index is not None else '?'} (index: {self.current_step_index}): {step_text}", # Added index to log
             "thinking",
@@ -452,9 +452,11 @@ class PlanningFlow(BaseFlow):
         try:
             print(f"Starting execution of step {self.current_step_index + 1 if self.current_step_index is not None else '?'} (index: {self.current_step_index}): {step_text}") # Added index to log
             print(f"BEFORE executor.run() - Step Index: {self.current_step_index}") # Added log before executor.run
-            step_result = await executor.run(step_prompt)
+            step_result = await executor.run(step_prompt, session_id=self.session_id)
             print(f"AFTER executor.run() - Step Index: {self.current_step_index}") # Added log after executor.run
             print(f"Successfully completed executor.run for step {self.current_step_index + 1 if self.current_step_index is not None else '?'}") # Clarified log
+
+            await executor.ask_user_for_input("Is this question displayed in the chat after step execution?");
 
             # Mark the step as completed after successful execution
             print(f"Attempting to mark step {self.current_step_index} as completed...") # Log before calling mark_step_completed
@@ -477,17 +479,23 @@ class PlanningFlow(BaseFlow):
                     "result": step_result
                 }
 
-            ThinkingTracker.add_thinking_step(
+            await ThinkingTracker.add_thinking_step(
                 os.environ.get("OPENMANUS_TASK_ID", self.active_plan_id),
                 f"Completed step {self.current_step_index + 1 if self.current_step_index is not None else '?'} (index: {self.current_step_index}): {step_text}", # Added index to log
                 "thinking",
                 completion_step_details
             )
 
+            executor_agent = self.get_executor(step_type)
+            logger.debug(f"_execute_step - Step Index: {self.current_step_index}, Step Text: '{step_text[:50]}...', Step Type: {step_type}") # Log step info
+            logger.debug(f"_execute_step - Executor Agent: {executor_agent.name if executor_agent else 'None'}, Agent Type: {type(executor_agent)}") # Log agent info
+            if isinstance(executor_agent, Manus): # Check if it's a Manus agent
+                logger.debug(f"_execute_step - Manus Agent Session ID: {getattr(executor_agent, 'session_id', 'Session ID not found')}") # Log session_id if Manus
+
             return step_result
         except Exception as e:
             print(f"Error in _execute_step for step index {self.current_step_index}: {e}") # Log error with step index
-            ThinkingTracker.add_thinking_step(
+            await ThinkingTracker.add_thinking_step(
                 session_id,
                 f"Error executing step {self.current_step_index + 1 if self.current_step_index is not None else '?'}: {step_text}. Error: {e}",
                 "error",
@@ -552,13 +560,13 @@ class PlanningFlow(BaseFlow):
         except Exception as e:
             logger.error(f"Error calling mark_step_completed on flow's planning_tool for plan {plan_id}: {e}", exc_info=True)
             # Optionally add a thinking step for this error
-            ThinkingTracker.add_thinking_step(self.session_id, f"Internal error: Failed to mark step {step_index+1} as completed. Error: {e}", details={"error": str(e)})
+            await ThinkingTracker.add_thinking_step(self.session_id, f"Internal error: Failed to mark step {step_index+1} as completed. Error: {e}", details={"error": str(e)})
 
     async def _finalize_plan(self) -> str:
         """Finalize the plan execution and return a summary."""
         final_message = "Plan execution completed successfully.\n\n"
         # Optionally, you can add more details here, like a summary of the plan,
         # or aggregate results from steps if needed.
-        ThinkingTracker.add_thinking_step(self.session_id, "Plan finalized and completed.", "conclusion")
+        await ThinkingTracker.add_thinking_step(self.session_id, "Plan finalized and completed.", "conclusion")
         logger.info("Plan execution finalized.")
         return final_message

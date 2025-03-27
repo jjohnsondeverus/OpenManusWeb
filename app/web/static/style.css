@@ -1,0 +1,37 @@
+.chat-messages {
+    /* ... existing styles ... */
+}
+
+.message {
+    /* ... existing styles ... */
+}
+
+.user-message {
+    /* ... existing styles for user messages ... */
+}
+
+.assistant-message {
+    /* ... existing styles for assistant messages ... */
+}
+
+.system-message {
+    /* ... existing styles for system messages ... */
+}
+
+.agent-question {
+    background-color: var(--panel-bg); /* Same background as chat panel */
+    color: var(--accent-color);      /* Use accent color for questions */
+    border: 1px dashed var(--accent-color); /* Dashed border to stand out */
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 5px;
+    align-self: flex-start; /* Align to the start of the chat container */
+    width: fit-content;     /* Fit content width */
+    max-width: 80%;         /* Limit max width */
+}
+
+.agent-question p {
+    margin: 0;
+    font-style: italic;       /* Italic font for questions */
+    font-weight: bold;        /* Bold font for questions */
+} 
